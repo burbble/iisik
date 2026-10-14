@@ -1,0 +1,14 @@
+{
+  "eventId": "uuid",
+  "eventType": "MasterDataChanged",
+  "occurredAt": "2026-09-27T10:40:00Z",
+  "producer": "master-data-service",
+  "schemaVersion": 1,
+  "correlationId": "uuid",
+  "payload": {
+    "entityType": "PRODUCT",
+    "entityId": "uuid",
+    "changeType": "UPDATED",
+    "mappingVersion": 4
+  }
+}

@@ -1,0 +1,39 @@
+digraph G {
+  graph [rankdir=LR, bgcolor="white", pad="0.2", nodesep="0.35", ranksep="0.55"];
+  node [shape=box, style="rounded", fontname="Arial", fontsize=10, color="black"];
+  edge [fontname="Arial", fontsize=9, color="black"];
+
+  client [label="Web client"];
+  gateway [label="GraphQL Gateway\nJWT + authorization"];
+  auth [label="Auth Service"];
+  redis_session [label="Redis\nsessions", shape=cylinder];
+  costing [label="Costing Service"];
+  master [label="Master Data Service"];
+  prod [label="Production Service"];
+  fin [label="Financial Service"];
+  redis_cache [label="Redis\ncache", shape=cylinder];
+  kafka [label="Kafka\nprofitability.events", shape=component];
+  dlq [label="Kafka DLQ\nprofitability.events.dlq", shape=component];
+  analytics [label="Analytics Service"];
+  reporting [label="Reporting Service"];
+  logs [label="JSON logs", shape=note];
+
+  client -> gateway [label="GraphQL"];
+  gateway -> auth [label="REST"];
+  auth -> redis_session [label="session"];
+  gateway -> costing [label="gRPC\ntimeout + retry"];
+  costing -> redis_cache [label="cache read/write"];
+  costing -> master [label="gRPC on miss\ntimeout + retry"];
+  costing -> prod [label="gRPC\ntimeout + retry"];
+  costing -> fin [label="gRPC\ntimeout + retry"];
+  costing -> kafka [label="event\nbounded retry"];
+  kafka -> analytics [label="consumer retry"];
+  analytics -> kafka [label="ProfitabilityCalculated"];
+  kafka -> reporting [label="consumer retry"];
+  kafka -> dlq [label="poison message"];
+
+  gateway -> logs [style=dashed];
+  costing -> logs [style=dashed];
+  analytics -> logs [style=dashed];
+  reporting -> logs [style=dashed];
+}

@@ -1,0 +1,242 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-16379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  kafka:
+    image: apache/kafka:3.9.1
+    hostname: kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,HOST://:19092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    ports:
+      - "9092:19092"
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "kafka:9092", "--list"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  auth:
+    build: .
+    command: uvicorn app.services.auth.api:app --host 0.0.0.0 --port 8001
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: lab7-development-secret-change-me
+      JWT_TTL_SECONDS: 3600
+      LAB7_SESSION_BACKEND: redis
+      LAB7_DATA_DIR: /data
+    volumes:
+      - ./runtime-data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "8001:8001"
+
+  master-data:
+    build: .
+    command: python -m app.transport.grpc.server master_data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; grpc.channel_ready_future(grpc.insecure_channel('127.0.0.1:50051')).result(timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    environment: &common-env
+      LAB7_DATA_DIR: /data
+      LAB7_EVENT_BACKEND: kafka
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: profitability.events
+      KAFKA_DEAD_LETTER_TOPIC: profitability.events.dlq
+      KAFKA_MAX_ATTEMPTS: 3
+      KAFKA_RETRY_BACKOFF_SECONDS: 0.10
+      REDIS_URL: redis://redis:6379/0
+      LAB7_CACHE_BACKEND: redis
+      COSTING_CONTEXT_CACHE_TTL_SECONDS: 300
+      GRPC_TIMEOUT_SECONDS: 2.0
+      GRPC_MAX_ATTEMPTS: 3
+      GRPC_RETRY_BACKOFF_SECONDS: 0.05
+      LOG_LEVEL: INFO
+      MASTER_DATA_GRPC_TARGET: master-data:50051
+      PRODUCTION_GRPC_TARGET: production:50052
+      FINANCIAL_GRPC_TARGET: financial:50053
+      COSTING_GRPC_TARGET: costing:50054
+      ANALYTICS_GRPC_TARGET: analytics:50055
+      REPORTING_GRPC_TARGET: reporting:50056
+    volumes:
+      - ./runtime-data:/data
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "50051:50051"
+
+  production:
+    build: .
+    command: python -m app.transport.grpc.server production
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; grpc.channel_ready_future(grpc.insecure_channel('127.0.0.1:50052')).result(timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    environment: *common-env
+    volumes:
+      - ./runtime-data:/data
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "50052:50052"
+
+  financial:
+    build: .
+    command: python -m app.transport.grpc.server financial
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; grpc.channel_ready_future(grpc.insecure_channel('127.0.0.1:50053')).result(timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    environment: *common-env
+    volumes:
+      - ./runtime-data:/data
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "50053:50053"
+
+  costing:
+    build: .
+    command: python -m app.transport.grpc.server costing
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; grpc.channel_ready_future(grpc.insecure_channel('127.0.0.1:50054')).result(timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    environment: *common-env
+    volumes:
+      - ./runtime-data:/data
+    depends_on:
+      kafka:
+        condition: service_healthy
+      master-data:
+        condition: service_healthy
+      production:
+        condition: service_healthy
+      financial:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "50054:50054"
+
+  analytics:
+    build: .
+    command: python -m app.transport.grpc.server analytics
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; grpc.channel_ready_future(grpc.insecure_channel('127.0.0.1:50055')).result(timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    environment: *common-env
+    volumes:
+      - ./runtime-data:/data
+    depends_on:
+      kafka:
+        condition: service_healthy
+      costing:
+        condition: service_healthy
+      financial:
+        condition: service_healthy
+      master-data:
+        condition: service_healthy
+    ports:
+      - "50055:50055"
+
+  reporting:
+    build: .
+    command: python -m app.transport.grpc.server reporting
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; grpc.channel_ready_future(grpc.insecure_channel('127.0.0.1:50056')).result(timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    environment: *common-env
+    volumes:
+      - ./runtime-data:/data
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "50056:50056"
+
+  gateway:
+    build: .
+    command: uvicorn app.gateway.main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    environment:
+      AUTH_SERVICE_URL: http://auth:8001
+      LAB7_DATA_DIR: /data
+      MASTER_DATA_GRPC_TARGET: master-data:50051
+      PRODUCTION_GRPC_TARGET: production:50052
+      FINANCIAL_GRPC_TARGET: financial:50053
+      COSTING_GRPC_TARGET: costing:50054
+      ANALYTICS_GRPC_TARGET: analytics:50055
+      REPORTING_GRPC_TARGET: reporting:50056
+      GRPC_TIMEOUT_SECONDS: 2.0
+      GRPC_MAX_ATTEMPTS: 3
+      GRPC_RETRY_BACKOFF_SECONDS: 0.05
+      LOG_LEVEL: INFO
+    volumes:
+      - ./runtime-data:/data
+    depends_on:
+      auth:
+        condition: service_healthy
+      master-data:
+        condition: service_healthy
+      production:
+        condition: service_healthy
+      financial:
+        condition: service_healthy
+      costing:
+        condition: service_healthy
+      analytics:
+        condition: service_healthy
+      reporting:
+        condition: service_healthy
+    ports:
+      - "8000:8000"

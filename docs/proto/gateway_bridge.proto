@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package profitability.gateway;
+
+import "google/protobuf/wrappers.proto";
+
+// Bridge RPCs are the network-facing application operations used by GraphQL Gateway.
+// Payloads are JSON strings wrapped in protobuf StringValue. The business-to-business
+// calls defined in profitability.proto remain strongly typed and unchanged from LR2.
+service MasterDataGateway {
+  rpc ListProducts(google.protobuf.StringValue) returns (google.protobuf.StringValue);
+  rpc GetProduct(google.protobuf.StringValue) returns (google.protobuf.StringValue);
+  rpc ResolveExternalMapping(google.protobuf.StringValue) returns (google.protobuf.StringValue);
+}
+
+service ProductionGateway {
+  rpc ListImportRuns(google.protobuf.StringValue) returns (google.protobuf.StringValue);
+  rpc GetImportRun(google.protobuf.StringValue) returns (google.protobuf.StringValue);
+  rpc StartImport(google.protobuf.StringValue) returns (google.protobuf.StringValue);
+  rpc RetryImport(google.protobuf.StringValue) returns (google.protobuf.StringValue);
+}
+
+service FinancialGateway {
+  rpc ListImportRuns(google.protobuf.StringValue) returns (google.protobuf.StringValue);
+  rpc GetImportRun(google.protobuf.StringValue) returns (google.protobuf.StringValue);
+  rpc StartImport(google.protobuf.StringValue) returns (google.protobuf.StringValue);
+  rpc RetryImport(google.protobuf.StringValue) returns (google.protobuf.StringValue);
+}
+
+service CostingGateway {
+  rpc GetCostBreakdown(google.protobuf.StringValue) returns (google.protobuf.StringValue);
+  rpc CalculateCost(google.protobuf.StringValue) returns (google.protobuf.StringValue);
+}
+
+service AnalyticsGateway {
+  rpc ListProfitability(google.protobuf.StringValue) returns (google.protobuf.StringValue);
+  rpc ProfitabilitySummary(google.protobuf.StringValue) returns (google.protobuf.StringValue);
+  rpc CalculateProfitability(google.protobuf.StringValue) returns (google.protobuf.StringValue);
+  rpc GetCalculationStatus(google.protobuf.StringValue) returns (google.protobuf.StringValue);
+}
+
+service ReportingGateway {
+  rpc GetReportExport(google.protobuf.StringValue) returns (google.protobuf.StringValue);
+  rpc CreateExport(google.protobuf.StringValue) returns (google.protobuf.StringValue);
+}

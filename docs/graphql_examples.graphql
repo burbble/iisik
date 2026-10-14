@@ -1,0 +1,46 @@
+# 1. Login is public. Gateway delegates credentials to Auth Service.
+mutation Login {
+  login(input: {email: "analyst@example.local", password: "Lab5Password!"}) {
+    accessToken
+    expiresAt
+    user { id email roles }
+  }
+}
+
+# Add returned token to HTTP header for protected operations:
+# Authorization: Bearer <accessToken>
+
+query CurrentUser {
+  me { id email roles }
+}
+
+query Profitability {
+  profitability(
+    filter: {periodFrom: "2026-09-01", periodTo: "2026-09-30"}
+    sort: {field: MARGIN_PERCENT, direction: DESC}
+  ) {
+    productId revenue costOfSales profit marginPercent
+  }
+}
+
+# ANALYST or ADMIN
+mutation CalculateCost {
+  calculateCost(input: {
+    period: "2026-09-01"
+    productIds: ["22222222-2222-2222-2222-222222222222"]
+    allocationBase: "LABOR_HOURS"
+  }) {
+    productId version totalCost unitCost
+  }
+}
+
+# PRODUCTION_ACCOUNTANT or ADMIN
+mutation ProductionImport {
+  startProductionImport(input: {source: MES, period: "2026-10-01"}) {
+    id source status period
+  }
+}
+
+mutation Logout {
+  logout
+}

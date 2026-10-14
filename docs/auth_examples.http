@@ -1,0 +1,19 @@
+### Register
+POST http://127.0.0.1:8001/auth/register
+Content-Type: application/json
+
+{"email":"new.user@example.local","password":"StrongPass123!"}
+
+### Login
+POST http://127.0.0.1:8001/auth/login
+Content-Type: application/json
+
+{"email":"analyst@example.local","password":"Lab5Password!"}
+
+### Verify token and active Redis session
+GET http://127.0.0.1:8001/auth/verify
+Authorization: Bearer {{token}}
+
+### Logout removes Redis session
+POST http://127.0.0.1:8001/auth/logout
+Authorization: Bearer {{token}}

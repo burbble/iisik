@@ -1,0 +1,16 @@
+{
+  "eventId": "uuid",
+  "eventType": "CostCalculationCompleted",
+  "occurredAt": "2026-09-27T10:50:00Z",
+  "producer": "costing-service",
+  "schemaVersion": 1,
+  "correlationId": "uuid",
+  "payload": {
+    "calculationId": "uuid",
+    "productId": "uuid",
+    "period": "2026-09-01",
+    "version": 3,
+    "unitCost": "182.4500",
+    "totalCost": "912250.00"
+  }
+}

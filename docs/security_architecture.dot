@@ -1,0 +1,23 @@
+digraph G {
+  rankdir=LR;
+  graph [bgcolor="white", pad="0.2", nodesep="0.45", ranksep="0.7"];
+  node [shape=box, style="rounded", fontname="Arial", fontsize=11, color="black", fontcolor="black"];
+  edge [fontname="Arial", fontsize=9, color="black", fontcolor="black"];
+
+  client [label="Web client"];
+  gateway [label="GraphQL Gateway\nprotected Query / Mutation"];
+  auth [label="Auth Service\nregister / login / verify / logout"];
+  identity [label="identity.db\nusers / roles / user_roles", shape=cylinder];
+  redis [label="Redis\nactive sessions + TTL", shape=cylinder];
+  facade [label="ApplicationFacade\nrole checks + actor context"];
+  services [label="Business services\nmock inter-service clients"];
+  dbs [label="service databases", shape=cylinder];
+
+  client -> gateway [label="GraphQL + Bearer JWT"];
+  gateway -> auth [label="REST verify / login"];
+  auth -> identity [label="credentials + roles"];
+  auth -> redis [label="session sid / TTL"];
+  gateway -> facade [label="verified Actor"];
+  facade -> services [label="allowed operation"];
+  services -> dbs [label="own data only"];
+}

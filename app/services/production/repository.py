@@ -1,0 +1,143 @@
+from datetime import date, datetime
+from decimal import Decimal
+from uuid import uuid4
+
+from sqlalchemy import delete, func, select
+
+from .database import SessionLocal
+from .models import ImportError, ImportRun, LaborEntry, MaterialConsumption, ProductionOrder
+
+
+class ProductionRepository:
+    def list_import_runs(self, source: str | None = None, period: date | None = None):
+        stmt = select(ImportRun)
+        if source is not None:
+            stmt = stmt.where(ImportRun.source_system == source)
+        if period is not None:
+            stmt = stmt.where(ImportRun.period == period)
+        stmt = stmt.order_by(ImportRun.started_at.desc())
+        with SessionLocal() as session:
+            runs = list(session.scalars(stmt))
+            result = []
+            for run in runs:
+                errors = list(session.scalars(
+                    select(ImportError).where(ImportError.import_run_id == run.import_run_id)
+                ))
+                result.append((run, errors))
+            return result
+
+    def get_import_run(self, run_id: str):
+        with SessionLocal() as session:
+            row = session.scalar(select(ImportRun).where(ImportRun.import_run_id == run_id))
+            if row is None:
+                return None
+            errors = list(session.scalars(select(ImportError).where(ImportError.import_run_id == run_id)))
+            return row, errors
+
+    def find_active_import(self, source: str, period: date):
+        with SessionLocal() as session:
+            return session.scalar(
+                select(ImportRun).where(
+                    ImportRun.source_system == source,
+                    ImportRun.period == period,
+                    ImportRun.status.in_(["QUEUED", "RUNNING"]),
+                )
+            )
+
+    def create_import(self, source: str, period: date, started_at: datetime) -> ImportRun:
+        row = ImportRun(
+            import_run_id=str(uuid4()),
+            source_system=source,
+            period=period,
+            status="RUNNING",
+            records_loaded=0,
+            records_failed=0,
+            started_at=started_at,
+            finished_at=None,
+        )
+        with SessionLocal.begin() as session:
+            session.add(row)
+            session.flush()
+            session.refresh(row)
+            return row
+
+    def restart_failed_import(self, run_id: str, started_at: datetime) -> ImportRun | None:
+        with SessionLocal.begin() as session:
+            row = session.scalar(select(ImportRun).where(ImportRun.import_run_id == run_id))
+            if row is None:
+                return None
+            row.status = "RUNNING"
+            row.records_loaded = 0
+            row.records_failed = 0
+            row.started_at = started_at
+            row.finished_at = None
+            session.execute(delete(ImportError).where(ImportError.import_run_id == run_id))
+            session.flush()
+            session.refresh(row)
+            return row
+
+    def get_cost_data(self, product_id: str, period: date):
+        with SessionLocal() as session:
+            produced_qty = session.scalar(
+                select(func.coalesce(func.sum(ProductionOrder.quantity), 0)).where(
+                    ProductionOrder.product_id == product_id,
+                    ProductionOrder.period == period,
+                    ProductionOrder.status == "COMPLETED",
+                )
+            )
+            material_cost = session.scalar(
+                select(func.coalesce(func.sum(MaterialConsumption.amount), 0))
+                .join(ProductionOrder, MaterialConsumption.order_id == ProductionOrder.order_id)
+                .where(
+                    ProductionOrder.product_id == product_id,
+                    ProductionOrder.period == period,
+                    ProductionOrder.status == "COMPLETED",
+                )
+            )
+            labor_cost = session.scalar(
+                select(func.coalesce(func.sum(LaborEntry.amount), 0))
+                .join(ProductionOrder, LaborEntry.order_id == ProductionOrder.order_id)
+                .where(
+                    ProductionOrder.product_id == product_id,
+                    ProductionOrder.period == period,
+                    ProductionOrder.status == "COMPLETED",
+                )
+            )
+            labor_hours = session.scalar(
+                select(func.coalesce(func.sum(LaborEntry.hours), 0))
+                .join(ProductionOrder, LaborEntry.order_id == ProductionOrder.order_id)
+                .where(
+                    ProductionOrder.product_id == product_id,
+                    ProductionOrder.period == period,
+                    ProductionOrder.status == "COMPLETED",
+                )
+            )
+            return {
+                "produced_qty": Decimal(produced_qty),
+                "material_cost": Decimal(material_cost),
+                "labor_cost": Decimal(labor_cost),
+                "labor_hours": Decimal(labor_hours),
+            }
+
+    def list_completed_order_ids(self, product_id: str, period: date) -> list[str]:
+        with SessionLocal() as session:
+            return list(session.scalars(
+                select(ProductionOrder.order_id).where(
+                    ProductionOrder.product_id == product_id,
+                    ProductionOrder.period == period,
+                    ProductionOrder.status == "COMPLETED",
+                )
+            ))
+
+    def complete_import(self, run_id: str, records_loaded: int, finished_at: datetime) -> ImportRun | None:
+        with SessionLocal.begin() as session:
+            row = session.scalar(select(ImportRun).where(ImportRun.import_run_id == run_id))
+            if row is None:
+                return None
+            row.status = "COMPLETED"
+            row.records_loaded = int(records_loaded)
+            row.records_failed = 0
+            row.finished_at = finished_at
+            session.flush()
+            session.refresh(row)
+            return row

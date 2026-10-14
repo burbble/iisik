@@ -1,0 +1,15 @@
+{
+  "eventId": "uuid",
+  "eventType": "ImportFailed",
+  "occurredAt": "2026-09-27T11:00:00Z",
+  "producer": "production-integration-service",
+  "schemaVersion": 1,
+  "correlationId": "uuid",
+  "payload": {
+    "importRunId": "uuid",
+    "sourceSystem": "MES",
+    "period": "2026-09-01",
+    "errorCount": 12,
+    "primaryErrorCode": "UNKNOWN_PRODUCT"
+  }
+}

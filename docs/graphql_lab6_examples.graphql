@@ -1,0 +1,48 @@
+# 1. Login (same security flow as LR5)
+mutation Login {
+  login(input: {email: "analyst@example.local", password: "Lab5Password!"}) {
+    accessToken
+    expiresAt
+    user { id email roles }
+  }
+}
+
+# Add header: Authorization: Bearer <accessToken>
+
+# 2. Real distributed cost calculation.
+# Gateway -> Costing gRPC -> Master/Production/Financial gRPC -> costing.db -> Kafka
+mutation CalculateCost {
+  calculateCost(input: {
+    period: "2026-09-01",
+    productIds: [
+      "22222222-2222-2222-2222-222222222222",
+      "33333333-3333-3333-3333-333333333333"
+    ],
+    allocationBase: "LABOR_HOURS"
+  }) {
+    calculationId
+    productId
+    version
+    materialCost
+    laborCost
+    overheadCost
+    totalCost
+    unitCost
+  }
+}
+
+# CostCalculationCompleted is consumed by Analytics, which calculates profitability
+# and publishes ProfitabilityCalculated. Reporting consumes that event.
+
+query Profitability {
+  profitability(filter: {
+    periodFrom: "2026-09-01",
+    periodTo: "2026-09-30"
+  }) {
+    productId
+    revenue
+    costOfSales
+    profit
+    marginPercent
+  }
+}
