@@ -16,7 +16,9 @@ class IdentityRepository:
 
     def get_user_by_email(self, email: str) -> User | None:
         with SessionLocal() as session:
-            return session.scalar(select(User).where(User.email == email.lower().strip()))
+            return session.scalar(
+                select(User).where(User.email == email.lower().strip())
+            )
 
     def list_roles(self, user_id: str) -> list[str]:
         with SessionLocal() as session:
@@ -41,7 +43,9 @@ class IdentityRepository:
             session.add(role)
         return role
 
-    def create_user(self, email: str, password_hash: str, role_name: str = "ANALYST") -> User:
+    def create_user(
+        self, email: str, password_hash: str, role_name: str = "PENDING"
+    ) -> User:
         now = datetime.now()
         role = self.ensure_role(role_name)
         user = User(
@@ -54,7 +58,9 @@ class IdentityRepository:
         with SessionLocal.begin() as session:
             session.add(user)
             session.flush()
-            session.add(UserRole(user_id=user.user_id, role_id=role.role_id, assigned_at=now))
+            session.add(
+                UserRole(user_id=user.user_id, role_id=role.role_id, assigned_at=now)
+            )
         return user
 
     def assign_role(self, user_id: str, role_name: str) -> None:
@@ -67,4 +73,10 @@ class IdentityRepository:
                 )
             )
             if existing is None:
-                session.add(UserRole(user_id=user_id, role_id=role.role_id, assigned_at=datetime.now()))
+                session.add(
+                    UserRole(
+                        user_id=user_id,
+                        role_id=role.role_id,
+                        assigned_at=datetime.now(),
+                    )
+                )

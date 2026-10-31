@@ -44,12 +44,16 @@ class AuthService:
             password_hash = hash_password(password)
         except ValueError as exc:
             raise ValidationError(str(exc)) from exc
-        row = self.identity.create_user(normalized, password_hash, role_name="ANALYST")
-        return Actor(row.user_id, row.email, ("ANALYST",), session_id="")
+        row = self.identity.create_user(normalized, password_hash, role_name="PENDING")
+        return Actor(row.user_id, row.email, ("PENDING",), session_id="")
 
     def login(self, email: str, password: str) -> AuthResult:
         row = self.identity.get_user_by_email(email.lower().strip())
-        if row is None or row.status != "ACTIVE" or not verify_password(password, row.password_hash):
+        if (
+            row is None
+            or row.status != "ACTIVE"
+            or not verify_password(password, row.password_hash)
+        ):
             raise AuthenticationError("Invalid credentials")
         roles = tuple(self.identity.list_roles(row.user_id))
         session_id = str(uuid4())
