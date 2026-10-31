@@ -1,0 +1,21 @@
+[
+  {
+    "external_id": "OCT-ORDER-1",
+    "product_code": "PD-1",
+    "quantity": "10",
+    "materials": [
+      {
+        "material_code": "PCB-01",
+        "quantity": "10",
+        "amount": "185"
+      }
+    ],
+    "labor": [
+      {
+        "cost_center_code": "ASSEMBLY",
+        "hours": "5",
+        "amount": "150"
+      }
+    ]
+  }
+]

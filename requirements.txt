@@ -10,3 +10,6 @@ grpcio>=1.62,<2.0
 protobuf>=5.27,<7.0
 kafka-python>=2.0,<3.0
 pytest>=8.0,<10.0
+openpyxl>=3.1,<4
+reportlab>=4.0,<5
+pypdf>=5.0,<7

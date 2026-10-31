@@ -51,26 +51,37 @@ class ProductionIntegrationService:
             status=run.status,
             records_loaded=run.records_loaded,
             records_failed=run.records_failed,
-            errors=[ImportErrorDTO(e.record_key, e.error_code, e.message) for e in errors],
+            errors=[
+                ImportErrorDTO(e.record_key, e.error_code, e.message) for e in errors
+            ],
             started_at=run.started_at,
             finished_at=run.finished_at,
         )
 
     def list_import_runs(self, source=None, period=None) -> list[ImportRunDTO]:
-        return [self._import_dto(run, errors) for run, errors in self.repository.list_import_runs(source, period)]
+        return [
+            self._import_dto(run, errors)
+            for run, errors in self.repository.list_import_runs(source, period)
+        ]
 
     def get_import_run(self, run_id: str) -> ImportRunDTO | None:
         pair = self.repository.get_import_run(run_id)
         return None if pair is None else self._import_dto(*pair)
 
     def start_import(self, source: str, period: date) -> ImportRunDTO:
+        if period.day != 1:
+            raise ValidationError("Import period must be the first day of a month")
         source = source.upper()
         if source not in {"ERP", "MES"}:
             raise ValidationError("Production import source must be ERP or MES")
         if self.repository.find_active_import(source, period) is not None:
-            raise ConflictError("An active production import already exists for this source and period")
+            raise ConflictError(
+                "An active production import already exists for this source and period"
+            )
         run = self.repository.create_import(source, period, datetime.now())
-        return self._import_dto(run, [])
+        from app.shared.importing import execute_import
+
+        return execute_import(self, self._import_dto(run, []), "production")
 
     def retry_import(self, run_id: str) -> ImportRunDTO:
         current = self.get_import_run(run_id)
@@ -79,7 +90,9 @@ class ProductionIntegrationService:
         if current.status != "FAILED":
             raise ConflictError("Only a failed import can be retried")
         run = self.repository.restart_failed_import(run_id, datetime.now())
-        return self._import_dto(run, [])
+        from app.shared.importing import execute_import
+
+        return execute_import(self, self._import_dto(run, []), "production")
 
     def get_cost_data(self, product_id: str, period: date) -> ProductionCostDataDTO:
         values = self.repository.get_cost_data(product_id, period)

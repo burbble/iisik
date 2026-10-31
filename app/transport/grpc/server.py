@@ -163,6 +163,10 @@ def _master_server(server, publisher):
 
 def _production_server(server, publisher):
     service = ProductionIntegrationService()
+    from app.transport.kafka.outbox import OutboxDispatcher
+
+    dispatcher = OutboxDispatcher(publisher, "production")
+    dispatcher.start()
 
     def get_cost_data(request, context):
         period = date.fromisoformat(request.period)
@@ -171,68 +175,82 @@ def _production_server(server, publisher):
         except NotFoundError:
             _abort_not_found(context, "No production data for product and period")
         response = pb.GetProductionCostDataResponse(
-            produced_qty=str(row.produced_qty), material_cost=str(row.material_cost),
-            labor_cost=str(row.labor_cost), labor_hours=str(row.labor_hours),
-            data_version=f"prod-{period.isoformat()}-v1",
+            produced_qty=str(row.produced_qty),
+            material_cost=str(row.material_cost),
+            labor_cost=str(row.labor_cost),
+            labor_hours=str(row.labor_hours),
+            data_version=service.repository.data_version(period),
         )
-        response.production_order_ids.extend(service.get_production_order_ids(request.product_id, period))
+        for line in service.repository.allocation_data(request.product_id, period):
+            response.allocation_lines.add(
+                production_order_id=line["production_order_id"],
+                cost_center_id=line["cost_center_id"],
+                volume=line["VOLUME"],
+                labor_hours=line["LABOR_HOURS"],
+                direct_cost=line["DIRECT_COST"],
+            )
+        response.production_order_ids.extend(
+            service.get_production_order_ids(request.product_id, period)
+        )
         return response
 
     add_production_handler(server, get_cost_data)
 
     def list_runs(p):
         return service.list_import_runs(
-            source=p.get("source"), period=date.fromisoformat(p["period"]) if p.get("period") else None
+            source=p.get("source"),
+            period=date.fromisoformat(p["period"]) if p.get("period") else None,
         )
 
     def get_run(p):
         return service.get_import_run(p["run_id"])
 
     def _finish_and_event(run):
-        completed = service.complete_import(run.id, records_loaded=0)
-        publisher.publish(EventEnvelope.create(
-            "ProductionDataImported", "production-integration-service",
-            {
-                "importRunId": completed.id,
-                "period": completed.period.isoformat(),
-                "sourceSystem": completed.source,
-                "recordsLoaded": completed.records_loaded,
-                "productionOrderIds": [],
-                "dataVersion": f"prod-{completed.period.isoformat()}-v1",
-            },
-        ))
-        return completed
+        if LAB7_EVENT_BACKEND.lower() == "memory":
+            dispatcher.flush()
+        return run
 
     def start_import(p):
-        try:
-            return _finish_and_event(service.start_import(p["source"], date.fromisoformat(p["period"])))
-        except Exception as exc:
-            publisher.publish(EventEnvelope.create(
-                "ImportFailed", "production-integration-service",
-                {"importRunId": "", "sourceSystem": p.get("source", ""), "period": p.get("period", ""),
-                 "errorCount": 1, "primaryErrorCode": type(exc).__name__},
-            ))
-            raise
+        return _finish_and_event(
+            service.start_import(p["source"], date.fromisoformat(p["period"]))
+        )
 
     def retry_import(p):
         return _finish_and_event(service.retry_import(p["run_id"]))
 
-    add_json_service(server, "profitability.gateway.ProductionGateway", {
-        "ListImportRuns": list_runs,
-        "GetImportRun": get_run,
-        "StartImport": start_import,
-        "RetryImport": retry_import,
-    })
+    def allocation_data(p):
+        return service.repository.allocation_data(
+            p["product_id"], date.fromisoformat(p["period"])
+        )
+
+    add_json_service(
+        server,
+        "profitability.gateway.ProductionGateway",
+        {
+            "ListImportRuns": list_runs,
+            "GetImportRun": get_run,
+            "GetAllocationData": allocation_data,
+            "StartImport": start_import,
+            "RetryImport": retry_import,
+        },
+    )
 
 
 def _financial_server(server, publisher):
     service = FinancialIntegrationService()
+    from app.transport.kafka.outbox import OutboxDispatcher
+
+    dispatcher = OutboxDispatcher(publisher, "financial")
+    dispatcher.start()
 
     def overhead(request, context):
         period = date.fromisoformat(request.period)
-        items, correction = service.get_overhead_breakdown(period, list(request.cost_center_ids))
+        items, correction = service.get_overhead_breakdown(
+            period, list(request.cost_center_ids)
+        )
         response = pb.GetOverheadDataResponse(
-            correction_amount=str(correction), data_version=f"fin-{period.isoformat()}-v1"
+            correction_amount=str(correction),
+            data_version=service.repository.data_version(period),
         )
         for center_id, amount in items.items():
             response.items.add(cost_center_id=center_id, amount=str(amount))
@@ -245,55 +263,46 @@ def _financial_server(server, publisher):
         except NotFoundError:
             _abort_not_found(context, "No sales data for product and period")
         return pb.GetSalesDataResponse(
-            sold_qty=str(row.quantity), revenue=str(row.revenue),
+            sold_qty=str(row.quantity),
+            revenue=str(row.revenue),
             currency=service.get_sales_currency(request.product_id, period),
-            data_version=f"fin-{period.isoformat()}-v1",
+            data_version=service.repository.data_version(period),
         )
 
     add_financial_handler(server, overhead, sales)
 
     def list_runs(p):
         return service.list_import_runs(
-            source=p.get("source"), period=date.fromisoformat(p["period"]) if p.get("period") else None
+            source=p.get("source"),
+            period=date.fromisoformat(p["period"]) if p.get("period") else None,
         )
 
     def get_run(p):
         return service.get_import_run(p["run_id"])
 
     def _finish_and_event(run):
-        completed = service.complete_import(run.id, records_loaded=0)
-        publisher.publish(EventEnvelope.create(
-            "FinancialDataImported", "financial-integration-service",
-            {
-                "importRunId": completed.id,
-                "period": completed.period.isoformat(),
-                "sourceSystem": completed.source,
-                "recordsLoaded": completed.records_loaded,
-                "dataVersion": f"fin-{completed.period.isoformat()}-v1",
-            },
-        ))
-        return completed
+        if LAB7_EVENT_BACKEND.lower() == "memory":
+            dispatcher.flush()
+        return run
 
     def start_import(p):
-        try:
-            return _finish_and_event(service.start_import(p["source"], date.fromisoformat(p["period"])))
-        except Exception as exc:
-            publisher.publish(EventEnvelope.create(
-                "ImportFailed", "financial-integration-service",
-                {"importRunId": "", "sourceSystem": p.get("source", ""), "period": p.get("period", ""),
-                 "errorCount": 1, "primaryErrorCode": type(exc).__name__},
-            ))
-            raise
+        return _finish_and_event(
+            service.start_import(p["source"], date.fromisoformat(p["period"]))
+        )
 
     def retry_import(p):
         return _finish_and_event(service.retry_import(p["run_id"]))
 
-    add_json_service(server, "profitability.gateway.FinancialGateway", {
-        "ListImportRuns": list_runs,
-        "GetImportRun": get_run,
-        "StartImport": start_import,
-        "RetryImport": retry_import,
-    })
+    add_json_service(
+        server,
+        "profitability.gateway.FinancialGateway",
+        {
+            "ListImportRuns": list_runs,
+            "GetImportRun": get_run,
+            "StartImport": start_import,
+            "RetryImport": retry_import,
+        },
+    )
 
 
 def _costing_server(server, publisher):

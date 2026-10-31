@@ -1,0 +1,22 @@
+[
+  {
+    "type": "OVERHEAD",
+    "external_id": "OCT-OH-1",
+    "cost_center_code": "ASSEMBLY",
+    "amount": "20",
+    "currency": "USD"
+  },
+  {
+    "type": "SALE",
+    "external_id": "OCT-SALE-1",
+    "document_date": "2026-10-20",
+    "currency": "USD",
+    "items": [
+      {
+        "product_code": "PD-1",
+        "quantity": "8",
+        "revenue": "640"
+      }
+    ]
+  }
+]
