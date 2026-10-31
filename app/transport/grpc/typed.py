@@ -11,6 +11,11 @@ def _serializer(message):
 
 class MasterDataStub:
     def __init__(self, channel: grpc.Channel):
+        self.LookupExternalMapping = channel.unary_unary(
+            "/profitability.v1.MasterDataService/LookupExternalMapping",
+            request_serializer=_serializer,
+            response_deserializer=pb.LookupExternalMappingResponse.FromString,
+        )
         self.GetCostingContext = channel.unary_unary(
             "/profitability.v1.MasterDataService/GetCostingContext",
             request_serializer=_serializer,
@@ -59,15 +64,27 @@ class ProfitabilityStub:
         )
 
 
-def add_master_data_handler(server: grpc.Server, fn):
+def add_master_data_handler(server: grpc.Server, fn, mapping_fn):
     handler = grpc.unary_unary_rpc_method_handler(
         fn,
         request_deserializer=pb.GetCostingContextRequest.FromString,
         response_serializer=_serializer,
     )
-    server.add_generic_rpc_handlers((grpc.method_handlers_generic_handler(
-        "profitability.v1.MasterDataService", {"GetCostingContext": handler}
-    ),))
+    server.add_generic_rpc_handlers(
+        (
+            grpc.method_handlers_generic_handler(
+                "profitability.v1.MasterDataService",
+                {
+                    "GetCostingContext": handler,
+                    "LookupExternalMapping": grpc.unary_unary_rpc_method_handler(
+                        mapping_fn,
+                        request_deserializer=pb.LookupExternalMappingRequest.FromString,
+                        response_serializer=_serializer,
+                    ),
+                },
+            ),
+        )
+    )
 
 
 def add_production_handler(server: grpc.Server, fn):
@@ -76,9 +93,14 @@ def add_production_handler(server: grpc.Server, fn):
         request_deserializer=pb.GetProductionCostDataRequest.FromString,
         response_serializer=_serializer,
     )
-    server.add_generic_rpc_handlers((grpc.method_handlers_generic_handler(
-        "profitability.v1.ProductionDataService", {"GetProductionCostData": handler}
-    ),))
+    server.add_generic_rpc_handlers(
+        (
+            grpc.method_handlers_generic_handler(
+                "profitability.v1.ProductionDataService",
+                {"GetProductionCostData": handler},
+            ),
+        )
+    )
 
 
 def add_financial_handler(server: grpc.Server, overhead_fn, sales_fn):
@@ -94,9 +116,13 @@ def add_financial_handler(server: grpc.Server, overhead_fn, sales_fn):
             response_serializer=_serializer,
         ),
     }
-    server.add_generic_rpc_handlers((grpc.method_handlers_generic_handler(
-        "profitability.v1.FinancialDataService", handlers
-    ),))
+    server.add_generic_rpc_handlers(
+        (
+            grpc.method_handlers_generic_handler(
+                "profitability.v1.FinancialDataService", handlers
+            ),
+        )
+    )
 
 
 def add_costing_handler(server: grpc.Server, fn):
@@ -105,9 +131,14 @@ def add_costing_handler(server: grpc.Server, fn):
         request_deserializer=pb.GetApprovedCostCalculationRequest.FromString,
         response_serializer=_serializer,
     )
-    server.add_generic_rpc_handlers((grpc.method_handlers_generic_handler(
-        "profitability.v1.CostingService", {"GetApprovedCostCalculation": handler}
-    ),))
+    server.add_generic_rpc_handlers(
+        (
+            grpc.method_handlers_generic_handler(
+                "profitability.v1.CostingService",
+                {"GetApprovedCostCalculation": handler},
+            ),
+        )
+    )
 
 
 def add_profitability_handler(server: grpc.Server, fn):
@@ -116,6 +147,11 @@ def add_profitability_handler(server: grpc.Server, fn):
         request_deserializer=pb.GetProfitabilityDetailRequest.FromString,
         response_serializer=_serializer,
     )
-    server.add_generic_rpc_handlers((grpc.method_handlers_generic_handler(
-        "profitability.v1.ProfitabilityService", {"GetProfitabilityDetail": handler}
-    ),))
+    server.add_generic_rpc_handlers(
+        (
+            grpc.method_handlers_generic_handler(
+                "profitability.v1.ProfitabilityService",
+                {"GetProfitabilityDetail": handler},
+            ),
+        )
+    )

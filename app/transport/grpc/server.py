@@ -10,29 +10,48 @@ import grpc
 
 from app.bootstrap import init_databases
 from app.config import (
-    MASTER_DATA_GRPC_TARGET, PRODUCTION_GRPC_TARGET, FINANCIAL_GRPC_TARGET,
-    COSTING_GRPC_TARGET, ANALYTICS_GRPC_TARGET, REPORTING_GRPC_TARGET,
-    KAFKA_GROUP_PREFIX, LAB7_EVENT_BACKEND,
+    MASTER_DATA_GRPC_TARGET,
+    PRODUCTION_GRPC_TARGET,
+    FINANCIAL_GRPC_TARGET,
+    COSTING_GRPC_TARGET,
+    ANALYTICS_GRPC_TARGET,
+    REPORTING_GRPC_TARGET,
+    KAFKA_GROUP_PREFIX,
+    LAB7_EVENT_BACKEND,
 )
 from app.contracts import profitability_pb as pb
 from app.services.master_data.service import MasterDataService
 from app.services.production.service import ProductionIntegrationService
 from app.services.financial.service import FinancialIntegrationService
 from app.services.costing.service import CostingService, ProductCostInput
-from app.services.analytics.service import ProfitabilityAnalyticsService, ProfitabilityCalculationInput
+from app.services.analytics.service import (
+    ProfitabilityAnalyticsService,
+    ProfitabilityCalculationInput,
+)
 from app.services.reporting.service import ReportingService
 from app.shared.errors import NotFoundError
 from app.shared.cache import cache_delete_prefix
 from app.shared.logging_config import get_logger
 from app.transport.grpc.bridge import JsonGrpcClient, add_json_service
 from app.transport.grpc.domain_clients import (
-    MasterDataDomainClient, ProductionDomainClient, FinancialDomainClient, CostingDomainClient,
+    MasterDataDomainClient,
+    ProductionDomainClient,
+    FinancialDomainClient,
+    CostingDomainClient,
 )
 from app.transport.grpc.typed import (
-    add_master_data_handler, add_production_handler, add_financial_handler,
-    add_costing_handler, add_profitability_handler,
+    add_master_data_handler,
+    add_production_handler,
+    add_financial_handler,
+    add_costing_handler,
+    add_profitability_handler,
 )
-from app.transport.kafka import EventEnvelope, InMemoryEventPublisher, KafkaEventConsumer, KafkaEventPublisher
+from app.transport.kafka import (
+    EventEnvelope,
+    InMemoryEventPublisher,
+    KafkaEventConsumer,
+    KafkaEventPublisher,
+)
 
 logger = get_logger("transport.grpc.server")
 
@@ -63,18 +82,33 @@ def _master_server(server, publisher):
         response = pb.GetCostingContextResponse(
             product_id=request.product_id,
             allocation_base=service.repository.get_default_allocation_base(),
-            data_version=f"master-{period.isoformat()}-v1",
+            data_version=service.repository.data_version(request.product_id, period),
         )
         for row in materials:
-            response.materials.add(material_id=row.material_id, standard_qty=str(row.standard_qty))
+            response.materials.add(
+                material_id=row.material_id, standard_qty=str(row.standard_qty)
+            )
         return response
 
-    add_master_data_handler(server, costing_context)
+    def typed_mapping(request, context):
+        row = service.repository.lookup_mapping(
+            request.source_system, request.entity_type, request.external_code
+        )
+        if row is None:
+            _abort_not_found(context, "External code mapping was not found")
+        return pb.LookupExternalMappingResponse(
+            internal_id=row.internal_id, mapping_version=row.updated_at.isoformat()
+        )
+
+    add_master_data_handler(server, costing_context, typed_mapping)
 
     def list_products(p):
         return service.list_products(
-            group_id=p.get("group_id"), active=p.get("active"), search=p.get("search"),
-            sort_by=p.get("sort_by", "CODE"), sort_direction=p.get("sort_direction", "ASC"),
+            group_id=p.get("group_id"),
+            active=p.get("active"),
+            search=p.get("search"),
+            sort_by=p.get("sort_by", "CODE"),
+            sort_direction=p.get("sort_direction", "ASC"),
         )
 
     def get_product(p):
@@ -84,22 +118,47 @@ def _master_server(server, publisher):
         row = service.resolve_external_mapping(
             p["source_system"], p["entity_type"], p["external_code"], p["internal_id"]
         )
-        publisher.publish(EventEnvelope.create(
-            "MasterDataChanged", "master-data-service",
-            {
-                "entityType": row.entity_type,
-                "entityId": row.internal_id,
-                "changeType": "UPDATED",
-                "mappingVersion": 1,
-            },
-        ))
+        publisher.publish(
+            EventEnvelope.create(
+                "MasterDataChanged",
+                "master-data-service",
+                {
+                    "entityType": row.entity_type,
+                    "entityId": row.internal_id,
+                    "changeType": "UPDATED",
+                    "mappingVersion": 1,
+                },
+            )
+        )
         return row
 
-    add_json_service(server, "profitability.gateway.MasterDataGateway", {
-        "ListProducts": list_products,
-        "GetProduct": get_product,
-        "ResolveExternalMapping": resolve_mapping,
-    })
+    def get_plan(p):
+        return service.repository.get_plan(
+            p["product_id"], date.fromisoformat(p["period"])
+        )
+
+    def lookup_mapping(p):
+        row = service.repository.lookup_mapping(
+            p["source_system"], p["entity_type"], p["external_code"]
+        )
+        if row is None:
+            raise NotFoundError("External code mapping was not found")
+        return {
+            "internal_id": row.internal_id,
+            "mapping_version": row.updated_at.isoformat(),
+        }
+
+    add_json_service(
+        server,
+        "profitability.gateway.MasterDataGateway",
+        {
+            "ListProducts": list_products,
+            "GetProduct": get_product,
+            "ResolveExternalMapping": resolve_mapping,
+            "LookupExternalMapping": lookup_mapping,
+            "GetPlannedCost": get_plan,
+        },
+    )
 
 
 def _production_server(server, publisher):
