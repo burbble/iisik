@@ -23,7 +23,9 @@ class ProductionOrder(Base):
 class MaterialConsumption(Base):
     __tablename__ = "material_consumptions"
     consumption_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    order_id: Mapped[str] = mapped_column(ForeignKey("production_orders.order_id"), nullable=False)
+    order_id: Mapped[str] = mapped_column(
+        ForeignKey("production_orders.order_id"), nullable=False
+    )
     material_id: Mapped[str] = mapped_column(String(36), nullable=False)
     quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
@@ -33,7 +35,9 @@ class MaterialConsumption(Base):
 class LaborEntry(Base):
     __tablename__ = "labor_entries"
     labor_entry_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    order_id: Mapped[str] = mapped_column(ForeignKey("production_orders.order_id"), nullable=False)
+    order_id: Mapped[str] = mapped_column(
+        ForeignKey("production_orders.order_id"), nullable=False
+    )
     cost_center_id: Mapped[str] = mapped_column(String(36), nullable=False)
     hours: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
@@ -54,8 +58,18 @@ class ImportRun(Base):
 class ImportError(Base):
     __tablename__ = "import_errors"
     error_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    import_run_id: Mapped[str] = mapped_column(ForeignKey("import_runs.import_run_id"), nullable=False)
+    import_run_id: Mapped[str] = mapped_column(
+        ForeignKey("import_runs.import_run_id"), nullable=False
+    )
     record_key: Mapped[str | None] = mapped_column(String(120))
     error_code: Mapped[str] = mapped_column(String(50), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     raw_payload: Mapped[dict | None] = mapped_column(JSON)
+
+
+class OutboxEvent(Base):
+    __tablename__ = "outbox_events"
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    envelope: Mapped[dict] = mapped_column(JSON, nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_error: Mapped[str | None] = mapped_column(Text)

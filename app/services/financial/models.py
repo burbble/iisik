@@ -22,7 +22,9 @@ class SalesDocument(Base):
 class SalesItem(Base):
     __tablename__ = "sales_items"
     sales_item_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    sales_document_id: Mapped[str] = mapped_column(ForeignKey("sales_documents.sales_document_id"), nullable=False)
+    sales_document_id: Mapped[str] = mapped_column(
+        ForeignKey("sales_documents.sales_document_id"), nullable=False
+    )
     product_id: Mapped[str] = mapped_column(String(36), nullable=False)
     quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     revenue: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
@@ -56,8 +58,18 @@ class ImportRun(Base):
 class ImportError(Base):
     __tablename__ = "import_errors"
     error_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    import_run_id: Mapped[str] = mapped_column(ForeignKey("import_runs.import_run_id"), nullable=False)
+    import_run_id: Mapped[str] = mapped_column(
+        ForeignKey("import_runs.import_run_id"), nullable=False
+    )
     record_key: Mapped[str | None] = mapped_column(String(120))
     error_code: Mapped[str] = mapped_column(String(50), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     raw_payload: Mapped[dict | None] = mapped_column(JSON)
+
+
+class OutboxEvent(Base):
+    __tablename__ = "outbox_events"
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    envelope: Mapped[dict] = mapped_column(JSON, nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_error: Mapped[str | None] = mapped_column(Text)

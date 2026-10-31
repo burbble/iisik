@@ -24,7 +24,8 @@ class MasterDataRepository:
         if search:
             pattern = f"%{search.lower()}%"
             stmt = stmt.where(
-                func.lower(Product.name).like(pattern) | func.lower(Product.code).like(pattern)
+                func.lower(Product.name).like(pattern)
+                | func.lower(Product.code).like(pattern)
             )
 
         sort_columns = {
@@ -39,7 +40,9 @@ class MasterDataRepository:
 
     def get_product(self, product_id: str) -> Product | None:
         with SessionLocal() as session:
-            return session.scalar(select(Product).where(Product.product_id == product_id))
+            return session.scalar(
+                select(Product).where(Product.product_id == product_id)
+            )
 
     def internal_entity_exists(self, entity_type: str, internal_id: str) -> bool:
         model_and_key = {
@@ -91,11 +94,15 @@ class MasterDataRepository:
     def get_product_materials(self, product_id: str, period):
         from sqlalchemy import or_
         from .models import ProductMaterial
+
         with SessionLocal() as session:
             stmt = select(ProductMaterial).where(
                 ProductMaterial.product_id == product_id,
                 ProductMaterial.valid_from <= period,
-                or_(ProductMaterial.valid_to.is_(None), ProductMaterial.valid_to >= period),
+                or_(
+                    ProductMaterial.valid_to.is_(None),
+                    ProductMaterial.valid_to >= period,
+                ),
             )
             return list(session.scalars(stmt))
 
@@ -103,3 +110,59 @@ class MasterDataRepository:
         with SessionLocal() as session:
             row = session.scalar(select(CostCenter).order_by(CostCenter.code).limit(1))
             return "DIRECT_COST" if row is None else row.allocation_base
+
+    def lookup_mapping(self, source_system, entity_type, external_code):
+        with SessionLocal() as session:
+            return session.scalar(
+                select(ExternalMapping).where(
+                    ExternalMapping.source_system == source_system,
+                    ExternalMapping.entity_type == entity_type,
+                    ExternalMapping.external_code == external_code,
+                    ExternalMapping.status == "RESOLVED",
+                )
+            )
+
+    def get_plan(self, product_id, period):
+        from .models import PlannedCost
+
+        with SessionLocal() as session:
+            return session.scalar(
+                select(PlannedCost)
+                .where(
+                    PlannedCost.product_id == product_id,
+                    PlannedCost.period == period,
+                    PlannedCost.status == "APPROVED",
+                )
+                .order_by(PlannedCost.version.desc())
+                .limit(1)
+            )
+
+    def data_version(self, product_id, period):
+        import hashlib
+        import json
+        from .models import PlannedCost, ProductMaterial
+
+        with SessionLocal() as session:
+            # Hash normative records and mappings, not a hard-coded v1 marker.
+            values = []
+            for model in [
+                Product,
+                ProductMaterial,
+                CostCenter,
+                ExternalMapping,
+                PlannedCost,
+            ]:
+                rows = list(session.scalars(select(model)))
+                values.extend(
+                    sorted(
+                        json.dumps(
+                            {
+                                c.name: str(getattr(r, c.name))
+                                for c in model.__table__.columns
+                            },
+                            sort_keys=True,
+                        )
+                        for r in rows
+                    )
+                )
+            return hashlib.sha256(json.dumps(values).encode()).hexdigest()

@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import asc, desc, select
+from sqlalchemy import asc, desc, select, func
 
 from .database import SessionLocal
 from .models import CalculationJob, ProfitabilityResult
@@ -17,11 +17,31 @@ class AnalyticsRepository:
         sort_by: str = "PERIOD",
         sort_direction: str = "ASC",
     ) -> list[ProfitabilityResult]:
-        stmt = select(ProfitabilityResult).where(
-            ProfitabilityResult.period >= period_from,
-            ProfitabilityResult.period <= period_to,
+        latest = (
+            select(
+                ProfitabilityResult.product_id.label("product"),
+                ProfitabilityResult.period.label("period"),
+                func.max(ProfitabilityResult.cost_version).label("version"),
+            )
+            .where(ProfitabilityResult.status == "COMPLETED")
+            .group_by(ProfitabilityResult.product_id, ProfitabilityResult.period)
+            .subquery()
         )
-        if product_ids:
+        stmt = (
+            select(ProfitabilityResult)
+            .join(
+                latest,
+                (ProfitabilityResult.product_id == latest.c.product)
+                & (ProfitabilityResult.period == latest.c.period)
+                & (ProfitabilityResult.cost_version == latest.c.version),
+            )
+            .where(
+                ProfitabilityResult.status == "COMPLETED",
+                ProfitabilityResult.period >= period_from,
+                ProfitabilityResult.period <= period_to,
+            )
+        )
+        if product_ids is not None:
             stmt = stmt.where(ProfitabilityResult.product_id.in_(product_ids))
         if min_margin_percent is not None:
             stmt = stmt.where(ProfitabilityResult.margin_percent >= min_margin_percent)
@@ -39,17 +59,23 @@ class AnalyticsRepository:
 
     def get_calculation_job(self, job_id: str) -> CalculationJob | None:
         with SessionLocal() as session:
-            return session.scalar(select(CalculationJob).where(CalculationJob.job_id == job_id))
+            return session.scalar(
+                select(CalculationJob).where(CalculationJob.job_id == job_id)
+            )
 
     def save_profitability(self, row: ProfitabilityResult) -> ProfitabilityResult:
         with SessionLocal.begin() as session:
             existing = session.scalar(
-                select(ProfitabilityResult).where(ProfitabilityResult.calculation_id == row.calculation_id)
+                select(ProfitabilityResult).where(
+                    ProfitabilityResult.calculation_id == row.calculation_id
+                )
             )
             if existing is None:
                 session.add(row)
                 target = row
             else:
+                existing.cost_version = row.cost_version
+                existing.status = "COMPLETED"
                 existing.product_id = row.product_id
                 existing.period = row.period
                 existing.revenue = row.revenue
@@ -69,14 +95,40 @@ class AnalyticsRepository:
             session.refresh(row)
             return row
 
-    def get_profitability_detail(self, product_id: str, period: date) -> ProfitabilityResult | None:
+    def get_profitability_detail(
+        self, product_id: str, period: date
+    ) -> ProfitabilityResult | None:
         with SessionLocal() as session:
             return session.scalar(
                 select(ProfitabilityResult)
                 .where(
+                    ProfitabilityResult.status == "COMPLETED",
                     ProfitabilityResult.product_id == product_id,
                     ProfitabilityResult.period == period,
                 )
-                .order_by(ProfitabilityResult.calculated_at.desc())
+                .order_by(
+                    ProfitabilityResult.cost_version.desc(),
+                    ProfitabilityResult.calculated_at.desc(),
+                )
                 .limit(1)
+            )
+
+    def invalidate(self, period=None):
+        from sqlalchemy import update
+
+        with SessionLocal.begin() as session:
+            results = update(ProfitabilityResult)
+            jobs = update(CalculationJob)
+            if period is not None:
+                results = results.where(ProfitabilityResult.period == period)
+                jobs = jobs.where(CalculationJob.period == period)
+            session.execute(results.values(status="INVALIDATED"))
+            session.execute(jobs.values(status="INVALIDATED"))
+
+    def get_by_calculation(self, calculation_id):
+        with SessionLocal() as session:
+            return session.scalar(
+                select(ProfitabilityResult).where(
+                    ProfitabilityResult.calculation_id == calculation_id
+                )
             )

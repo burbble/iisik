@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String
+from sqlalchemy import Integer, Boolean, Date, DateTime, ForeignKey, Numeric, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -21,7 +21,9 @@ class ProductGroup(Base):
 class Product(Base):
     __tablename__ = "products"
     product_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    group_id: Mapped[str] = mapped_column(ForeignKey("product_groups.group_id"), nullable=False)
+    group_id: Mapped[str] = mapped_column(
+        ForeignKey("product_groups.group_id"), nullable=False
+    )
     code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     unit: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -39,8 +41,12 @@ class Material(Base):
 
 class ProductMaterial(Base):
     __tablename__ = "product_materials"
-    product_id: Mapped[str] = mapped_column(ForeignKey("products.product_id"), primary_key=True)
-    material_id: Mapped[str] = mapped_column(ForeignKey("materials.material_id"), primary_key=True)
+    product_id: Mapped[str] = mapped_column(
+        ForeignKey("products.product_id"), primary_key=True
+    )
+    material_id: Mapped[str] = mapped_column(
+        ForeignKey("materials.material_id"), primary_key=True
+    )
     valid_from: Mapped[date] = mapped_column(Date, primary_key=True)
     standard_qty: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     valid_to: Mapped[date | None] = mapped_column(Date)
@@ -63,3 +69,13 @@ class ExternalMapping(Base):
     internal_id: Mapped[str] = mapped_column(String(36), nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class PlannedCost(Base):
+    __tablename__ = "planned_costs"
+    plan_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    product_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    period: Mapped[date] = mapped_column(Date, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    unit_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)

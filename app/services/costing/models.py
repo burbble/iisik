@@ -2,7 +2,17 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    JSON,
+    Text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -24,12 +34,16 @@ class CostCalculation(Base):
     produced_qty: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     unit_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    planned_unit_cost: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
+    source_versions: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
 
 
 class OverheadAllocation(Base):
     __tablename__ = "overhead_allocations"
     allocation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    calculation_id: Mapped[str] = mapped_column(ForeignKey("cost_calculations.calculation_id"), nullable=False)
+    calculation_id: Mapped[str] = mapped_column(
+        ForeignKey("cost_calculations.calculation_id"), nullable=False
+    )
     production_order_id: Mapped[str] = mapped_column(String(36), nullable=False)
     cost_center_id: Mapped[str] = mapped_column(String(36), nullable=False)
     basis_type: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -40,6 +54,18 @@ class OverheadAllocation(Base):
 class IntegrationReadiness(Base):
     __tablename__ = "integration_readiness"
     period: Mapped[date] = mapped_column(Date, primary_key=True)
-    production_ready: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    financial_ready: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    production_ready: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    financial_ready: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class OutboxEvent(Base):
+    __tablename__ = "outbox_events"
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    envelope: Mapped[dict] = mapped_column(JSON, nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_error: Mapped[str | None] = mapped_column(Text)

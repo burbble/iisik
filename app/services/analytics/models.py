@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from sqlalchemy import Date, DateTime, JSON, Numeric, String
+from sqlalchemy import Integer, Date, DateTime, JSON, Numeric, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -20,6 +20,8 @@ class ProfitabilityResult(Base):
     cost_of_sales: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     profit: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     margin_percent: Mapped[Decimal] = mapped_column(Numeric(7, 2), nullable=False)
+    cost_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="COMPLETED")
     calculated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 

@@ -14,4 +14,6 @@ def make_engine(url: str) -> Engine:
 
 
 def make_session_factory(engine: Engine):
-    return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)
+    return sessionmaker(
+        bind=engine, autoflush=False, expire_on_commit=False, future=True
+    )
