@@ -1,0 +1,138 @@
+syntax = "proto3";
+
+package profitability.v1;
+
+service MasterDataService {
+  rpc LookupExternalMapping(LookupExternalMappingRequest) returns (LookupExternalMappingResponse);
+  rpc GetCostingContext(GetCostingContextRequest)
+      returns (GetCostingContextResponse);
+}
+
+message LookupExternalMappingRequest {
+  string source_system = 1;
+  string entity_type = 2;
+  string external_code = 3;
+}
+message LookupExternalMappingResponse {
+  string internal_id = 1;
+  string mapping_version = 2;
+}
+message ProductionAllocationBasis {
+  string production_order_id = 1;
+  string cost_center_id = 2;
+  string volume = 3;
+  string labor_hours = 4;
+  string direct_cost = 5;
+}
+
+message GetCostingContextRequest {
+  string product_id = 1;
+  string period = 2;
+}
+
+message MaterialNorm {
+  string material_id = 1;
+  string standard_qty = 2;
+}
+
+message GetCostingContextResponse {
+  string product_id = 1;
+  repeated MaterialNorm materials = 2;
+  string allocation_base = 3;
+  string data_version = 4;
+}
+
+service ProductionDataService {
+  rpc GetProductionCostData(GetProductionCostDataRequest)
+      returns (GetProductionCostDataResponse);
+}
+
+message GetProductionCostDataRequest {
+  string product_id = 1;
+  string period = 2;
+}
+
+message GetProductionCostDataResponse {
+  string produced_qty = 1;
+  string material_cost = 2;
+  string labor_cost = 3;
+  repeated string production_order_ids = 4;
+  string data_version = 5;
+  string labor_hours = 6;
+  repeated ProductionAllocationBasis allocation_lines = 7;
+}
+
+service FinancialDataService {
+  rpc GetOverheadData(GetOverheadDataRequest)
+      returns (GetOverheadDataResponse);
+
+  rpc GetSalesData(GetSalesDataRequest)
+      returns (GetSalesDataResponse);
+}
+
+message GetOverheadDataRequest {
+  string period = 1;
+  repeated string cost_center_ids = 2;
+}
+
+message OverheadAmount {
+  string cost_center_id = 1;
+  string amount = 2;
+}
+
+message GetOverheadDataResponse {
+  repeated OverheadAmount items = 1;
+  string correction_amount = 2;
+  string data_version = 3;
+}
+
+message GetSalesDataRequest {
+  string product_id = 1;
+  string period = 2;
+}
+
+message GetSalesDataResponse {
+  string sold_qty = 1;
+  string revenue = 2;
+  string currency = 3;
+  string data_version = 4;
+}
+
+service CostingService {
+  rpc GetApprovedCostCalculation(GetApprovedCostCalculationRequest)
+      returns (GetApprovedCostCalculationResponse);
+}
+
+message GetApprovedCostCalculationRequest {
+  string product_id = 1;
+  string period = 2;
+  optional int32 version = 3;
+}
+
+message GetApprovedCostCalculationResponse {
+  string calculation_id = 1;
+  int32 version = 2;
+  string unit_cost = 3;
+  string total_cost = 4;
+  string produced_qty = 5;
+  string status = 6;
+}
+
+service ProfitabilityService {
+  rpc GetProfitabilityDetail(GetProfitabilityDetailRequest)
+      returns (GetProfitabilityDetailResponse);
+}
+
+message GetProfitabilityDetailRequest {
+  string product_id = 1;
+  string period = 2;
+}
+
+message GetProfitabilityDetailResponse {
+  string result_id = 1;
+  string revenue = 2;
+  string cost_of_sales = 3;
+  string profit = 4;
+  string margin_percent = 5;
+  string calculated_at = 6;
+}

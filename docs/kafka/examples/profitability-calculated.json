@@ -13,6 +13,7 @@
     "revenue": "1240000.00",
     "costOfSales": "912250.00",
     "profit": "327750.00",
-    "marginPercent": "26.43"
+    "marginPercent": "26.43",
+    "costVersion": 1
   }
 }

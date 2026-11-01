@@ -1,0 +1,19 @@
+{
+  "eventId": "uuid",
+  "eventType": "ProductionDataImported",
+  "occurredAt": "2026-09-27T10:30:00Z",
+  "producer": "production-integration-service",
+  "schemaVersion": 1,
+  "correlationId": "uuid",
+  "payload": {
+    "importRunId": "uuid",
+    "period": "2026-09-01",
+    "sourceSystem": "MES",
+    "recordsLoaded": 1248,
+    "productionOrderIds": [
+      "uuid",
+      "uuid"
+    ],
+    "dataVersion": "prod-2026-09-v3"
+  }
+}

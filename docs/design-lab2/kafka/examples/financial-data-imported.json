@@ -1,0 +1,15 @@
+{
+  "eventId": "uuid",
+  "eventType": "FinancialDataImported",
+  "occurredAt": "2026-09-27T10:35:00Z",
+  "producer": "financial-integration-service",
+  "schemaVersion": 1,
+  "correlationId": "uuid",
+  "payload": {
+    "importRunId": "uuid",
+    "period": "2026-09-01",
+    "sourceSystem": "FINANCE",
+    "recordsLoaded": 842,
+    "dataVersion": "fin-2026-09-v2"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "eventId": "uuid",
+  "eventType": "ProfitabilityCalculated",
+  "occurredAt": "2026-09-27T10:55:00Z",
+  "producer": "profitability-analytics-service",
+  "schemaVersion": 1,
+  "correlationId": "uuid",
+  "payload": {
+    "resultId": "uuid",
+    "productId": "uuid",
+    "groupId": "uuid",
+    "period": "2026-09-01",
+    "revenue": "1240000.00",
+    "costOfSales": "912250.00",
+    "profit": "327750.00",
+    "marginPercent": "26.43",
+    "costVersion": 1
+  }
+}

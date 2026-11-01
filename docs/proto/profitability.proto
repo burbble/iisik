@@ -3,8 +3,26 @@ syntax = "proto3";
 package profitability.v1;
 
 service MasterDataService {
+  rpc LookupExternalMapping(LookupExternalMappingRequest) returns (LookupExternalMappingResponse);
   rpc GetCostingContext(GetCostingContextRequest)
       returns (GetCostingContextResponse);
+}
+
+message LookupExternalMappingRequest {
+  string source_system = 1;
+  string entity_type = 2;
+  string external_code = 3;
+}
+message LookupExternalMappingResponse {
+  string internal_id = 1;
+  string mapping_version = 2;
+}
+message ProductionAllocationBasis {
+  string production_order_id = 1;
+  string cost_center_id = 2;
+  string volume = 3;
+  string labor_hours = 4;
+  string direct_cost = 5;
 }
 
 message GetCostingContextRequest {
@@ -40,7 +58,8 @@ message GetProductionCostDataResponse {
   string labor_cost = 3;
   repeated string production_order_ids = 4;
   string data_version = 5;
-  string labor_hours = 6; // backward-compatible LR6 extension
+  string labor_hours = 6;
+  repeated ProductionAllocationBasis allocation_lines = 7;
 }
 
 service FinancialDataService {
