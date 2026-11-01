@@ -50,7 +50,9 @@ class RedisSessionStore:
         try:
             import redis
         except ImportError as exc:
-            raise RuntimeError("Package 'redis' is required for RedisSessionStore") from exc
+            raise RuntimeError(
+                "Package 'redis' is required for RedisSessionStore"
+            ) from exc
         self._client = redis.Redis.from_url(redis_url, decode_responses=True)
 
     def _key(self, session_id: str) -> str:

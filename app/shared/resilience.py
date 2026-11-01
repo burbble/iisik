@@ -6,7 +6,11 @@ from typing import Callable, TypeVar
 
 import grpc
 
-from app.config import GRPC_MAX_ATTEMPTS, GRPC_RETRY_BACKOFF_SECONDS, GRPC_TIMEOUT_SECONDS
+from app.config import (
+    GRPC_MAX_ATTEMPTS,
+    GRPC_RETRY_BACKOFF_SECONDS,
+    GRPC_TIMEOUT_SECONDS,
+)
 from app.shared.logging_config import get_logger
 
 T = TypeVar("T")

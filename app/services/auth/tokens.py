@@ -15,14 +15,18 @@ class TokenClaims:
 
 
 class JWTManager:
-    def __init__(self, secret: str, ttl_seconds: int = 3600, issuer: str = "profitability-auth"):
+    def __init__(
+        self, secret: str, ttl_seconds: int = 3600, issuer: str = "profitability-auth"
+    ):
         if len(secret) < 24:
             raise ValueError("JWT secret must be at least 24 characters")
         self.secret = secret
         self.ttl_seconds = ttl_seconds
         self.issuer = issuer
 
-    def issue(self, user_id: str, session_id: str, roles: tuple[str, ...]) -> tuple[str, datetime]:
+    def issue(
+        self, user_id: str, session_id: str, roles: tuple[str, ...]
+    ) -> tuple[str, datetime]:
         now = datetime.now(timezone.utc)
         expires_at = now + timedelta(seconds=self.ttl_seconds)
         payload = {

@@ -1,6 +1,13 @@
 from dataclasses import dataclass
 
-from .interfaces import AnalyticsClient, CostingClient, FinancialClient, MasterDataClient, ProductionClient, ReportingClient
+from .interfaces import (
+    AnalyticsClient,
+    CostingClient,
+    FinancialClient,
+    MasterDataClient,
+    ProductionClient,
+    ReportingClient,
+)
 from .grpc_clients import (
     GrpcAnalyticsClient,
     GrpcCostingClient,

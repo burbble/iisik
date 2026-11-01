@@ -10,7 +10,10 @@ from .tokens import JWTManager
 
 @lru_cache(maxsize=1)
 def get_auth_service() -> AuthService:
-    backend = os.getenv("LAB7_SESSION_BACKEND", os.getenv("LAB6_SESSION_BACKEND", os.getenv("LAB5_SESSION_BACKEND", "redis"))).lower()
+    backend = os.getenv(
+        "LAB7_SESSION_BACKEND",
+        os.getenv("LAB6_SESSION_BACKEND", os.getenv("LAB5_SESSION_BACKEND", "redis")),
+    ).lower()
     if backend == "memory":
         sessions = InMemorySessionStore()
     else:

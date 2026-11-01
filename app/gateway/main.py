@@ -50,4 +50,9 @@ app.include_router(graphql_app, prefix="/graphql")
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "lab": 6, "security": "jwt+redis", "integration": "grpc+kafka"}
+    return {
+        "status": "ok",
+        "lab": 6,
+        "security": "jwt+redis",
+        "integration": "grpc+kafka",
+    }

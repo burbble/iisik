@@ -23,27 +23,37 @@ class AuthClient:
     """REST client used by GraphQL Gateway to delegate security to Auth Service."""
 
     def __init__(self, base_url: str | None = None):
-        self.base_url = (base_url or os.getenv("AUTH_SERVICE_URL", "http://127.0.0.1:8001")).rstrip("/")
+        self.base_url = (
+            base_url or os.getenv("AUTH_SERVICE_URL", "http://127.0.0.1:8001")
+        ).rstrip("/")
 
     def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
         try:
-            return httpx.request(method, f"{self.base_url}{path}", timeout=3.0, **kwargs)
+            return httpx.request(
+                method, f"{self.base_url}{path}", timeout=3.0, **kwargs
+            )
         except httpx.HTTPError as exc:
             raise AuthenticationError("Auth Service is unavailable") from exc
 
     def register(self, email: str, password: str) -> Actor:
-        response = self._request("POST", "/auth/register", json={"email": email, "password": password})
+        response = self._request(
+            "POST", "/auth/register", json={"email": email, "password": password}
+        )
         if response.status_code == 409:
             raise ConflictError(response.json().get("detail", "User already exists"))
         if response.status_code == 422:
-            raise ValidationError(response.json().get("detail", "Invalid registration data"))
+            raise ValidationError(
+                response.json().get("detail", "Invalid registration data")
+            )
         if response.status_code != 201:
             raise AuthenticationError("Registration failed")
         data = response.json()
         return Actor(data["id"], data["email"], tuple(data["roles"]), session_id="")
 
     def login(self, email: str, password: str) -> LoginPayload:
-        response = self._request("POST", "/auth/login", json={"email": email, "password": password})
+        response = self._request(
+            "POST", "/auth/login", json={"email": email, "password": password}
+        )
         if response.status_code != 200:
             raise AuthenticationError("Invalid credentials")
         data = response.json()

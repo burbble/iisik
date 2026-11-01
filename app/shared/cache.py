@@ -16,7 +16,9 @@ class JsonCache:
     def get(self, key: str) -> dict[str, Any] | list[Any] | None:
         raise NotImplementedError
 
-    def set(self, key: str, value: dict[str, Any] | list[Any], ttl_seconds: int) -> None:
+    def set(
+        self, key: str, value: dict[str, Any] | list[Any], ttl_seconds: int
+    ) -> None:
         raise NotImplementedError
 
     def delete_prefix(self, prefix: str) -> int:
@@ -53,7 +55,10 @@ class InMemoryJsonCache(JsonCache):
 
     def set(self, key, value, ttl_seconds):
         with self._lock:
-            self._values[key] = (time.time() + ttl_seconds, json.loads(json.dumps(value)))
+            self._values[key] = (
+                time.time() + ttl_seconds,
+                json.loads(json.dumps(value)),
+            )
 
     def delete_prefix(self, prefix):
         with self._lock:
@@ -82,7 +87,9 @@ class RedisJsonCache(JsonCache):
         return json.loads(raw)
 
     def set(self, key, value, ttl_seconds):
-        self.client.setex(self._key(key), ttl_seconds, json.dumps(value, ensure_ascii=False))
+        self.client.setex(
+            self._key(key), ttl_seconds, json.dumps(value, ensure_ascii=False)
+        )
 
     def delete_prefix(self, prefix):
         pattern = self._key(prefix) + "*"
@@ -105,10 +112,15 @@ def get_cache() -> JsonCache:
 def cache_get(key: str):
     try:
         value = get_cache().get(key)
-        logger.info("cache hit" if value is not None else "cache miss", extra={"operation": key})
+        logger.info(
+            "cache hit" if value is not None else "cache miss", extra={"operation": key}
+        )
         return value
     except Exception as exc:
-        logger.warning("cache read failed; continuing without cache", extra={"operation": key, "error_type": type(exc).__name__})
+        logger.warning(
+            "cache read failed; continuing without cache",
+            extra={"operation": key, "error_type": type(exc).__name__},
+        )
         return None
 
 
@@ -117,7 +129,10 @@ def cache_set(key: str, value, ttl_seconds: int):
         get_cache().set(key, value, ttl_seconds)
         logger.info("cache set", extra={"operation": key})
     except Exception as exc:
-        logger.warning("cache write failed; continuing without cache", extra={"operation": key, "error_type": type(exc).__name__})
+        logger.warning(
+            "cache write failed; continuing without cache",
+            extra={"operation": key, "error_type": type(exc).__name__},
+        )
 
 
 def cache_delete_prefix(prefix: str) -> int:
@@ -126,5 +141,8 @@ def cache_delete_prefix(prefix: str) -> int:
         logger.info("cache invalidated", extra={"operation": prefix})
         return deleted
     except Exception as exc:
-        logger.warning("cache invalidation failed", extra={"operation": prefix, "error_type": type(exc).__name__})
+        logger.warning(
+            "cache invalidation failed",
+            extra={"operation": prefix, "error_type": type(exc).__name__},
+        )
         return 0

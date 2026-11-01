@@ -38,7 +38,9 @@ class LoginResponse(BaseModel):
 
 def bearer_token(authorization: str | None = Header(default=None)) -> str:
     if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bearer token required")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Bearer token required"
+        )
     return authorization.split(" ", 1)[1].strip()
 
 
@@ -46,7 +48,9 @@ def bearer_token(authorization: str | None = Header(default=None)) -> str:
 def register(body: Credentials, auth: AuthService = Depends(get_auth_service)):
     try:
         actor = auth.register(body.email, body.password)
-        return UserResponse(id=actor.user_id, email=actor.email, roles=list(actor.roles))
+        return UserResponse(
+            id=actor.user_id, email=actor.email, roles=list(actor.roles)
+        )
     except ConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValidationError as exc:
@@ -78,7 +82,9 @@ def verify(
 ):
     try:
         actor = auth.verify(token)
-        return UserResponse(id=actor.user_id, email=actor.email, roles=list(actor.roles))
+        return UserResponse(
+            id=actor.user_id, email=actor.email, roles=list(actor.roles)
+        )
     except AuthenticationError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 
