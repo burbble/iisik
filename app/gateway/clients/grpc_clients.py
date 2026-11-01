@@ -238,20 +238,39 @@ class GrpcAnalyticsClient:
 class GrpcReportingClient:
     def __init__(self, target=REPORTING_GRPC_TARGET):
         self.rpc = JsonGrpcClient(target, "profitability.gateway.ReportingGateway")
+        self.reader = GrpcAnalyticsClient(target)
+        self.reader.rpc = self.rpc
+
+    def list_profitability(self, *args, **kwargs):
+        return self.reader.list_profitability(*args, **kwargs)
+
+    def aggregate_profitability(self, *args, **kwargs):
+        return self.reader.aggregate_profitability(*args, **kwargs)
 
     @staticmethod
     def _dto(x):
         if x is None:
             return None
         return ReportExportDTO(
-            id=x["id"], status=x["status"], format=x["format"], requested_by=x["requested_by"],
-            file_ref=x.get("file_ref"), error_message=x.get("error_message"),
+            id=x["id"],
+            status=x["status"],
+            format=x["format"],
+            requested_by=x["requested_by"],
+            file_ref=x.get("file_ref"),
+            error_message=x.get("error_message"),
         )
 
     def get_report_export(self, export_id):
         return self._dto(self.rpc.call("GetReportExport", {"export_id": export_id}))
 
     def create_export(self, format, requested_by, report_id=None):
-        return self._dto(self.rpc.call("CreateExport", {
-            "format": format, "requested_by": requested_by, "report_id": report_id,
-        }))
+        return self._dto(
+            self.rpc.call(
+                "CreateExport",
+                {
+                    "format": format,
+                    "requested_by": requested_by,
+                    "report_id": report_id,
+                },
+            )
+        )

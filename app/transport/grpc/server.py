@@ -625,24 +625,76 @@ def _reporting_server(server, publisher):
     def create_export(p):
         return service.create_export(p["format"], p["requested_by"], p.get("report_id"))
 
-    add_json_service(server, "profitability.gateway.ReportingGateway", {
-        "GetReportExport": get_export,
-        "CreateExport": create_export,
-    })
+    def list_results(p):
+        return service.list_profitability(
+            p.get("product_ids"),
+            date.fromisoformat(p["period_from"]),
+            date.fromisoformat(p["period_to"]),
+            Decimal(p["min_margin_percent"])
+            if p.get("min_margin_percent") is not None
+            else None,
+            p.get("sort_by", "PERIOD"),
+            p.get("sort_direction", "ASC"),
+        )
+
+    def summary_results(p):
+        return service.aggregate_profitability(
+            p.get("product_ids"),
+            date.fromisoformat(p["period_from"]),
+            date.fromisoformat(p["period_to"]),
+            Decimal(p["min_margin_percent"])
+            if p.get("min_margin_percent") is not None
+            else None,
+        )
+
+    add_json_service(
+        server,
+        "profitability.gateway.ReportingGateway",
+        {
+            "ListProfitability": list_results,
+            "ProfitabilitySummary": summary_results,
+            "GetReportExport": get_export,
+            "CreateExport": create_export,
+        },
+    )
 
     if LAB7_EVENT_BACKEND.lower() == "kafka":
+
         def profitability_calculated(event):
             x = event.payload
             service.update_profitability_projection(
-                source_result_id=x["resultId"], product_id=x["productId"], group_id=x.get("groupId", ""),
-                period=date.fromisoformat(x["period"]), revenue=Decimal(x["revenue"]),
-                total_cost=Decimal(x["costOfSales"]), profit=Decimal(x["profit"]),
-                margin_percent=Decimal(x["marginPercent"]), updated_at=datetime.now(),
+                cost_version=x.get("costVersion", 0),
+                source_result_id=x["resultId"],
+                product_id=x["productId"],
+                group_id=x.get("groupId", ""),
+                period=date.fromisoformat(x["period"]),
+                revenue=Decimal(x["revenue"]),
+                total_cost=Decimal(x["costOfSales"]),
+                profit=Decimal(x["profit"]),
+                margin_percent=Decimal(x["marginPercent"]),
+                updated_at=datetime.fromisoformat(
+                    event.occurredAt.replace("Z", "+00:00")
+                ).replace(tzinfo=None),
+            )
+
+        def invalidate_reporting(event):
+            service.repository.invalidate(
+                date.fromisoformat(event.payload["period"])
+                if event.payload.get("period")
+                else None,
+                event.payload.get("productId"),
             )
 
         consumer = KafkaEventConsumer(
             f"{KAFKA_GROUP_PREFIX}-reporting",
-            {"ProfitabilityCalculated": profitability_calculated},
+            {
+                "ProfitabilityCalculated": profitability_calculated,
+                "CostCalculationCompleted": invalidate_reporting,
+                "ProductionDataImported": invalidate_reporting,
+                "FinancialDataImported": invalidate_reporting,
+                "ImportFailed": invalidate_reporting,
+                "MasterDataChanged": invalidate_reporting,
+            },
         )
         consumer.start_in_thread("reporting-kafka-consumer")
 
