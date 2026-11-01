@@ -17,7 +17,13 @@ class EventEnvelope:
     payload: dict
 
     @classmethod
-    def create(cls, event_type: str, producer: str, payload: dict, correlation_id: str | None = None):
+    def create(
+        cls,
+        event_type: str,
+        producer: str,
+        payload: dict,
+        correlation_id: str | None = None,
+    ):
         return cls(
             eventId=str(uuid4()),
             eventType=event_type,
@@ -45,4 +51,11 @@ class EventEnvelope:
     @classmethod
     def from_bytes(cls, raw: bytes):
         data = json.loads(raw.decode("utf-8"))
+        if not isinstance(data, dict) or not isinstance(data.get("payload"), dict):
+            raise ValueError("Event payload must be an object")
+        for key in ["eventId", "eventType", "occurredAt", "producer", "correlationId"]:
+            if not isinstance(data.get(key), str) or not data[key]:
+                raise ValueError(f"Invalid event field: {key}")
+        if data.get("schemaVersion") != 1:
+            raise ValueError("Unsupported event schema version")
         return cls(**data)

@@ -47,7 +47,9 @@ class KafkaEventPublisher(EventPublisher):
             try:
                 from kafka import KafkaProducer
             except ImportError as exc:
-                raise RuntimeError("kafka-python is required for Kafka runtime") from exc
+                raise RuntimeError(
+                    "kafka-python is required for Kafka runtime"
+                ) from exc
             self._producer = KafkaProducer(
                 bootstrap_servers=self.bootstrap_servers.split(","),
                 acks="all",
@@ -98,7 +100,9 @@ class KafkaEventPublisher(EventPublisher):
                     break
                 time.sleep(self.backoff_seconds * (2 ** (attempt - 1)))
         assert last_error is not None
-        raise RuntimeError(f"Kafka publish failed after {self.max_attempts} attempts") from last_error
+        raise RuntimeError(
+            f"Kafka publish failed after {self.max_attempts} attempts"
+        ) from last_error
 
     def close(self):
         if self._producer is not None:

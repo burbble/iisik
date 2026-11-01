@@ -44,7 +44,11 @@ class KafkaEventConsumer:
         if handler is None:
             logger.info(
                 "Kafka event ignored: no handler",
-                extra={"event_type": event.eventType, "correlation_id": event.correlationId, "operation": self.group_id},
+                extra={
+                    "event_type": event.eventType,
+                    "correlation_id": event.correlationId,
+                    "operation": self.group_id,
+                },
             )
             return True
         for attempt in range(1, self.max_attempts + 1):
@@ -75,16 +79,10 @@ class KafkaEventConsumer:
                 if retrying:
                     time.sleep(self.backoff_seconds * (2 ** (attempt - 1)))
                     continue
-                self._send_to_dead_letter(event, exc)
-                return False
+                return self._send_to_dead_letter(event, exc)
         return False
 
-    def _send_to_dead_letter(self, event: EventEnvelope, error: Exception) -> None:
-        if self._dead_letter is None:
-            self._dead_letter = KafkaEventPublisher(
-                bootstrap_servers=self.bootstrap_servers,
-                topic=self.dead_letter_topic,
-            )
+    def _send_to_dead_letter(self, event: EventEnvelope, error: Exception) -> bool:
         failed = EventEnvelope.create(
             "KafkaMessageFailed",
             "kafka-consumer",
@@ -99,16 +97,32 @@ class KafkaEventConsumer:
             correlation_id=event.correlationId,
         )
         try:
+            if self._dead_letter is None:
+                self._dead_letter = KafkaEventPublisher(
+                    bootstrap_servers=self.bootstrap_servers,
+                    topic=self.dead_letter_topic,
+                )
             self._dead_letter.publish(failed)
             logger.error(
                 "Kafka event moved to dead-letter topic",
-                extra={"event_type": event.eventType, "correlation_id": event.correlationId, "operation": self.dead_letter_topic},
+                extra={
+                    "event_type": event.eventType,
+                    "correlation_id": event.correlationId,
+                    "operation": self.dead_letter_topic,
+                },
             )
+            return True
         except Exception:
             logger.exception(
                 "Failed to publish dead-letter event",
-                extra={"event_type": event.eventType, "correlation_id": event.correlationId, "operation": self.dead_letter_topic},
+                extra={
+                    "event_type": event.eventType,
+                    "correlation_id": event.correlationId,
+                    "operation": self.dead_letter_topic,
+                },
             )
+
+            return False
 
     def run_forever(self):
         try:
@@ -121,27 +135,71 @@ class KafkaEventConsumer:
             group_id=self.group_id,
             auto_offset_reset="earliest",
             enable_auto_commit=False,
-            value_deserializer=lambda raw: EventEnvelope.from_bytes(raw),
         )
         try:
             for record in consumer:
                 if self._stop.is_set():
                     break
-                try:
-                    event = record.value
-                    self._process(event)
-                except Exception as exc:
-                    logger.exception("Kafka record deserialization/processing failed", extra={"operation": self.group_id, "error_type": type(exc).__name__})
-                finally:
-                    # Commit after success or after DLQ handoff so a poison message does not block the partition forever.
-                    consumer.commit()
+                acknowledged = False
+                while not self._stop.is_set() and not acknowledged:
+                    try:
+                        try:
+                            event = EventEnvelope.from_bytes(record.value)
+                        except Exception as exc:
+                            import base64
+
+                            event = EventEnvelope.create(
+                                "MalformedKafkaRecord",
+                                "kafka-consumer",
+                                {
+                                    "rawBase64": base64.b64encode(
+                                        record.value or b""
+                                    ).decode(),
+                                    "topic": record.topic,
+                                    "partition": record.partition,
+                                    "offset": record.offset,
+                                },
+                            )
+                            acknowledged = self._send_to_dead_letter(event, exc)
+                        else:
+                            acknowledged = self._process(event)
+                        if acknowledged:
+                            from kafka import TopicPartition, OffsetAndMetadata
+
+                            consumer.commit(
+                                {
+                                    TopicPartition(
+                                        record.topic, record.partition
+                                    ): OffsetAndMetadata(
+                                        record.offset + 1,
+                                        "",
+                                        *(
+                                            [-1]
+                                            if "leader_epoch"
+                                            in OffsetAndMetadata._fields
+                                            else []
+                                        ),
+                                    )
+                                }
+                            )
+                    except Exception as exc:
+                        logger.exception(
+                            "Kafka processing or DLQ failed",
+                            extra={"error_type": type(exc).__name__},
+                        )
+                        acknowledged = False
+                    if not acknowledged:
+                        self._stop.wait(min(max(self.backoff_seconds, 0.1), 5))
+
         finally:
             consumer.close()
             if self._dead_letter is not None:
                 self._dead_letter.close()
 
     def start_in_thread(self, name: str | None = None):
-        thread = threading.Thread(target=self.run_forever, name=name or self.group_id, daemon=True)
+        thread = threading.Thread(
+            target=self.run_forever, name=name or self.group_id, daemon=True
+        )
         thread.start()
         return thread
 
