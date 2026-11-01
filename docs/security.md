@@ -1,36 +1,21 @@
-# Security architecture - Lab 5
+# Безопасность
 
-## Request flow
+Пользовательский запрос: JWT → Auth.verify → действующая Redis-сессия → актуальные роли Identity → Actor → ApplicationFacade. Logout удаляет sid. Пароль хранится как PBKDF2-HMAC-SHA256 со случайной солью.
 
-1. Client sends `login` GraphQL Mutation to Gateway.
-2. Gateway forwards credentials to Auth Service over REST.
-3. Auth Service verifies PBKDF2 password hash in `identity.db`.
-4. Auth Service creates session ID and stores session in Redis with TTL.
-5. Auth Service issues JWT containing `sub`, `sid`, `roles`, `iat`, `exp` and returns it through Gateway.
-6. Client sends `Authorization: Bearer <JWT>` on protected GraphQL requests.
-7. Gateway calls `GET /auth/verify`.
-8. Auth Service verifies JWT, checks session in Redis and reloads current roles from Identity storage.
-9. Gateway puts verified `Actor` into GraphQL context.
-10. Resolver passes `Actor` to `ApplicationFacade`, where role checks are executed before business state changes.
+Публичная регистрация создаёт PENDING. Эта роль не получает финансовую аналитику, расчёты, импорты и отчёты. Роль назначает оператор командой `python -m app.scripts.assign_role EMAIL ROLE` в доверенной среде. Публичного назначения ролей нет.
 
-## Role matrix
-
-| Operation | ANALYST | PRODUCTION_ACCOUNTANT | FINANCE_ACCOUNTANT | MANAGER | ADMIN |
+| Операция | ANALYST | PRODUCTION_ACCOUNTANT | FINANCE_ACCOUNTANT | MANAGER | ADMIN |
 |---|---|---|---|---|---|
-| products | yes | yes | yes | yes | yes |
-| profitability / summary | yes | no | no | yes | yes |
-| costBreakdown | yes | no | no | yes | yes |
-| importRuns | yes | yes | yes | no | yes |
-| startProductionImport | no | yes | no | no | yes |
-| startFinancialImport | no | no | yes | no | yes |
-| retryImport | by import type | by production import | by finance import | no | yes |
-| resolveExternalMapping | no | yes | yes | no | yes |
-| calculateCost | yes | no | no | no | yes |
-| calculateProfitability | yes | no | no | no | yes |
-| exportReport | yes | no | no | yes | yes |
+| products | Да | Да | Да | Да | Да |
+| profitability, summary, costBreakdown, allocations | Да | Нет | Нет | Да | Да |
+| importRuns | Оба контура | ERP/MES | FINANCE | Нет | Оба контура |
+| startProductionImport | Нет | Да | Нет | Нет | Да |
+| startFinancialImport | Нет | Нет | Да | Нет | Да |
+| retryImport | Нет | ERP/MES | FINANCE | Нет | Оба контура |
+| resolveExternalMapping | Нет | Да | Да | Нет | Да |
+| calculateCost / calculateProfitability | Да | Нет | Нет | Нет | Да |
+| exportReport | Свой отчёт | Нет | Нет | Свой отчёт | Свой отчёт |
 
-`ADMIN` is treated as a super-role in the implementation.
+Для importRuns без source выбираются только разрешённые направления; явно запрещённый source даёт AuthorizationError. requested_by не принимается от клиента: фасад определяет его из Actor. SavedReport.user_id проверяется в Reporting до создания REPORT_EXPORT. Фасад также защищает чтение чужой выгрузки.
 
-## Session rule
-
-A syntactically valid JWT is not sufficient. `AuthService.verify()` additionally requires the `sid` session to exist in Redis. Logout deletes the session, while Redis TTL expires it automatically. Therefore a previously issued token stops being accepted when its active session disappears.
+Внутренний gRPC использует подписанный служебный JWT: iss=profitability-internal, aud=internal-rpc, role=INTERNAL_SERVICE, sub, iat и exp. Только gateway может инициировать изменяющие методы; сервисные клиенты выполняют чтение по своей служебной идентичности. User JWT не принимается вместо service JWT. Порты gRPC закрыты для хоста в Compose. INTERNAL_JWT_SECRET — отдельный ключ из окружения, обязательный для standalone server; тестовый процесс использует общий эфемерный ключ.

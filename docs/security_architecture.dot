@@ -1,23 +1,22 @@
-digraph G {
-  rankdir=LR;
-  graph [bgcolor="white", pad="0.2", nodesep="0.45", ranksep="0.7"];
-  node [shape=box, style="rounded", fontname="Arial", fontsize=11, color="black", fontcolor="black"];
-  edge [fontname="Arial", fontsize=9, color="black", fontcolor="black"];
-
-  client [label="Web client"];
-  gateway [label="GraphQL Gateway\nprotected Query / Mutation"];
-  auth [label="Auth Service\nregister / login / verify / logout"];
-  identity [label="identity.db\nusers / roles / user_roles", shape=cylinder];
-  redis [label="Redis\nactive sessions + TTL", shape=cylinder];
-  facade [label="ApplicationFacade\nrole checks + actor context"];
-  services [label="Business services\nmock inter-service clients"];
-  dbs [label="service databases", shape=cylinder];
-
-  client -> gateway [label="GraphQL + Bearer JWT"];
-  gateway -> auth [label="REST verify / login"];
-  auth -> identity [label="credentials + roles"];
-  auth -> redis [label="session sid / TTL"];
-  gateway -> facade [label="verified Actor"];
-  facade -> services [label="allowed operation"];
-  services -> dbs [label="own data only"];
+digraph Architecture {
+ graph [rankdir=TB, bgcolor="white", pad=0.3, nodesep=0.4, ranksep=0.55];
+ node [shape=box, style="rounded,filled", fillcolor="#f5f5f5", fontname="DejaVu Sans", fontsize=10];
+ edge [fontname="DejaVu Sans", fontsize=8];
+ client [label="Клиент"]; gateway [label="GraphQL Gateway\nUser JWT + sessions + RBAC"];
+ auth [label="Auth / Identity\nidentity.db"]; redis [label="Redis\nsessions + costing cache"];
+ master [label="Master Data\nmaster_data.db\nplans + mappings"];
+ production [label="Production Integration\nproduction.db + outbox"];
+ financial [label="Financial Integration\nfinancial.db + outbox\nOVERHEAD / CORRECTION"];
+ costing [label="Costing\ncosting.db + outbox\ncalculations + allocation details"];
+ analytics [label="Analytics\nanalytics.db\nexact cost version"];
+ reporting [label="Reporting\nreporting.db\nread model + exports"];
+ kafka [label="Kafka\nprofitability.events + DLQ",shape=component];
+ client -> gateway; gateway -> auth; auth -> redis;
+ gateway -> master [label="service JWT / gRPC"]; gateway -> production; gateway -> financial;
+ gateway -> costing; gateway -> analytics; gateway -> reporting [label="profitability / summary / export"];
+ costing -> master; costing -> production; costing -> financial; costing -> redis [style=dashed,label="TTL / invalidate"];
+ production -> kafka [label="actual import outcome"]; financial -> kafka [label="actual import outcome"];
+ master -> kafka [label="MasterDataChanged"]; costing -> kafka [label="outbox dispatcher"];
+ kafka -> costing [label="readiness + INVALIDATED"]; kafka -> analytics [label="CostCalculationCompleted"];
+ analytics -> kafka [label="ProfitabilityCalculated\nsame correlationId"]; kafka -> reporting [label="projection + invalidation"];
 }

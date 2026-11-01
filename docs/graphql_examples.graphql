@@ -44,3 +44,21 @@ mutation ProductionImport {
 mutation Logout {
   logout
 }
+
+# Corrected LR1/2 features, available through the LR7 implementation.
+query CostPlanAndAllocation {
+  costBreakdown(productId:"22222222-2222-2222-2222-222222222222",period:"2026-09-01") {
+    version unitCost plannedUnitCost unitCostDeviation
+  }
+  overheadAllocations(productId:"22222222-2222-2222-2222-222222222222",period:"2026-09-01") {
+    productionOrderId costCenterId basisType basisValue amount
+  }
+}
+query CostCenterProfitability {
+  profitability(filter:{costCenterIds:["55555555-5555-5555-5555-555555555555"],periodFrom:"2026-09-01",periodTo:"2026-09-30"}) {
+    productId revenue profit marginPercent
+  }
+}
+query EmptyProducts {
+  profitabilitySummary(filter:{productIds:[],periodFrom:"2026-09-01",periodTo:"2026-09-30"}) {count totalRevenue}
+}

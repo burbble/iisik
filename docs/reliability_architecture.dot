@@ -1,39 +1,22 @@
-digraph G {
-  graph [rankdir=LR, bgcolor="white", pad="0.2", nodesep="0.35", ranksep="0.55"];
-  node [shape=box, style="rounded", fontname="Arial", fontsize=10, color="black"];
-  edge [fontname="Arial", fontsize=9, color="black"];
-
-  client [label="Web client"];
-  gateway [label="GraphQL Gateway\nJWT + authorization"];
-  auth [label="Auth Service"];
-  redis_session [label="Redis\nsessions", shape=cylinder];
-  costing [label="Costing Service"];
-  master [label="Master Data Service"];
-  prod [label="Production Service"];
-  fin [label="Financial Service"];
-  redis_cache [label="Redis\ncache", shape=cylinder];
-  kafka [label="Kafka\nprofitability.events", shape=component];
-  dlq [label="Kafka DLQ\nprofitability.events.dlq", shape=component];
-  analytics [label="Analytics Service"];
-  reporting [label="Reporting Service"];
-  logs [label="JSON logs", shape=note];
-
-  client -> gateway [label="GraphQL"];
-  gateway -> auth [label="REST"];
-  auth -> redis_session [label="session"];
-  gateway -> costing [label="gRPC\ntimeout + retry"];
-  costing -> redis_cache [label="cache read/write"];
-  costing -> master [label="gRPC on miss\ntimeout + retry"];
-  costing -> prod [label="gRPC\ntimeout + retry"];
-  costing -> fin [label="gRPC\ntimeout + retry"];
-  costing -> kafka [label="event\nbounded retry"];
-  kafka -> analytics [label="consumer retry"];
-  analytics -> kafka [label="ProfitabilityCalculated"];
-  kafka -> reporting [label="consumer retry"];
-  kafka -> dlq [label="poison message"];
-
-  gateway -> logs [style=dashed];
-  costing -> logs [style=dashed];
-  analytics -> logs [style=dashed];
-  reporting -> logs [style=dashed];
+digraph Architecture {
+ graph [rankdir=TB, bgcolor="white", pad=0.3, nodesep=0.4, ranksep=0.55];
+ node [shape=box, style="rounded,filled", fillcolor="#f5f5f5", fontname="DejaVu Sans", fontsize=10];
+ edge [fontname="DejaVu Sans", fontsize=8];
+ client [label="Клиент"]; gateway [label="GraphQL Gateway\nUser JWT + sessions + RBAC"];
+ auth [label="Auth / Identity\nidentity.db"]; redis [label="Redis\nsessions + costing cache"];
+ master [label="Master Data\nmaster_data.db\nplans + mappings"];
+ production [label="Production Integration\nproduction.db + outbox"];
+ financial [label="Financial Integration\nfinancial.db + outbox\nOVERHEAD / CORRECTION"];
+ costing [label="Costing\ncosting.db + outbox\ncalculations + allocation details"];
+ analytics [label="Analytics\nanalytics.db\nexact cost version"];
+ reporting [label="Reporting\nreporting.db\nread model + exports"];
+ kafka [label="Kafka\nprofitability.events + DLQ",shape=component];
+ client -> gateway; gateway -> auth; auth -> redis;
+ gateway -> master [label="service JWT / gRPC"]; gateway -> production; gateway -> financial;
+ gateway -> costing; gateway -> analytics; gateway -> reporting [label="profitability / summary / export"];
+ costing -> master; costing -> production; costing -> financial; costing -> redis [style=dashed,label="TTL / invalidate"];
+ production -> kafka [label="actual import outcome"]; financial -> kafka [label="actual import outcome"];
+ master -> kafka [label="MasterDataChanged"]; costing -> kafka [label="outbox dispatcher"];
+ kafka -> costing [label="readiness + INVALIDATED"]; kafka -> analytics [label="CostCalculationCompleted"];
+ analytics -> kafka [label="ProfitabilityCalculated\nsame correlationId"]; kafka -> reporting [label="projection + invalidation"];
 }

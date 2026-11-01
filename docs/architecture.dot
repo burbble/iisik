@@ -1,61 +1,22 @@
-digraph G {
-  graph [rankdir=TB, bgcolor="white", fontname="Arial", nodesep=0.35, ranksep=0.55];
-  node [shape=box, style="rounded", color="black", fontcolor="black", fontname="Arial"];
-  edge [color="black", fontcolor="black", fontname="Arial", fontsize=9];
-
-  client [label="Web client"];
-  gateway [label="GraphQL Gateway\n:8000"];
-  auth [label="Auth Service\nREST :8001"];
-  redis [label="Redis sessions", shape=cylinder];
-
-  master [label="Master Data\ngRPC :50051"];
-  production [label="Production Integration\ngRPC :50052"];
-  financial [label="Financial Integration\ngRPC :50053"];
-  costing [label="Costing\ngRPC :50054"];
-  analytics [label="Profitability Analytics\ngRPC :50055"];
-  reporting [label="Reporting\ngRPC :50056"];
-  kafka [label="Kafka\nprofitability.events", shape=component];
-
-  masterdb [label="master_data.db", shape=cylinder];
-  productiondb [label="production.db", shape=cylinder];
-  financedb [label="finance.db", shape=cylinder];
-  costingdb [label="costing.db", shape=cylinder];
-  analyticsdb [label="analytics.db", shape=cylinder];
-  reportingdb [label="reporting.db", shape=cylinder];
-  identitydb [label="identity.db", shape=cylinder];
-
-  client -> gateway [label="GraphQL + JWT"];
-  gateway -> auth [label="REST verify/login"];
-  auth -> redis [label="session TTL"];
-  auth -> identitydb;
-
-  gateway -> master [label="gRPC"];
-  gateway -> production [label="gRPC"];
-  gateway -> financial [label="gRPC"];
-  gateway -> costing [label="gRPC"];
-  gateway -> analytics [label="gRPC"];
-  gateway -> reporting [label="gRPC"];
-
-  costing -> master [label="GetCostingContext"];
-  costing -> production [label="GetProductionCostData"];
-  costing -> financial [label="GetOverheadData"];
-  analytics -> costing [label="GetApprovedCostCalculation"];
-  analytics -> financial [label="GetSalesData"];
-
-  master -> masterdb;
-  production -> productiondb;
-  financial -> financedb;
-  costing -> costingdb;
-  analytics -> analyticsdb;
-  reporting -> reportingdb;
-
-  master -> kafka [label="MasterDataChanged"];
-  production -> kafka [label="ProductionDataImported"];
-  financial -> kafka [label="FinancialDataImported"];
-  costing -> kafka [label="CostCalculationCompleted"];
-  analytics -> kafka [label="ProfitabilityCalculated"];
-
-  kafka -> costing [label="ready events"];
-  kafka -> analytics [label="cost completed"];
-  kafka -> reporting [label="profitability calculated"];
+digraph Architecture {
+ graph [rankdir=TB, bgcolor="white", pad=0.3, nodesep=0.4, ranksep=0.55];
+ node [shape=box, style="rounded,filled", fillcolor="#f5f5f5", fontname="DejaVu Sans", fontsize=10];
+ edge [fontname="DejaVu Sans", fontsize=8];
+ client [label="Клиент"]; gateway [label="GraphQL Gateway\nUser JWT + sessions + RBAC"];
+ auth [label="Auth / Identity\nidentity.db"]; redis [label="Redis\nsessions + costing cache"];
+ master [label="Master Data\nmaster_data.db\nplans + mappings"];
+ production [label="Production Integration\nproduction.db + outbox"];
+ financial [label="Financial Integration\nfinancial.db + outbox\nOVERHEAD / CORRECTION"];
+ costing [label="Costing\ncosting.db + outbox\ncalculations + allocation details"];
+ analytics [label="Analytics\nanalytics.db\nexact cost version"];
+ reporting [label="Reporting\nreporting.db\nread model + exports"];
+ kafka [label="Kafka\nprofitability.events + DLQ",shape=component];
+ client -> gateway; gateway -> auth; auth -> redis;
+ gateway -> master [label="service JWT / gRPC"]; gateway -> production; gateway -> financial;
+ gateway -> costing; gateway -> analytics; gateway -> reporting [label="profitability / summary / export"];
+ costing -> master; costing -> production; costing -> financial; costing -> redis [style=dashed,label="TTL / invalidate"];
+ production -> kafka [label="actual import outcome"]; financial -> kafka [label="actual import outcome"];
+ master -> kafka [label="MasterDataChanged"]; costing -> kafka [label="outbox dispatcher"];
+ kafka -> costing [label="readiness + INVALIDATED"]; kafka -> analytics [label="CostCalculationCompleted"];
+ analytics -> kafka [label="ProfitabilityCalculated\nsame correlationId"]; kafka -> reporting [label="projection + invalidation"];
 }

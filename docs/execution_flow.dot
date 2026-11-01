@@ -1,28 +1,13 @@
-digraph G {
-  graph [rankdir=LR, bgcolor="white", fontname="Arial", nodesep=0.35, ranksep=0.45];
-  node [shape=box, style="rounded", color="black", fontcolor="black", fontname="Arial"];
-  edge [color="black", fontcolor="black", fontname="Arial", fontsize=9];
-
-  client [label="Client"];
-  gateway [label="GraphQL Gateway"];
-  costing [label="Costing Service"];
-  master [label="Master Data"];
-  production [label="Production"];
-  financial [label="Financial"];
-  kafka1 [label="Kafka\nCostCalculationCompleted", shape=component];
-  analytics [label="Profitability Analytics"];
-  kafka2 [label="Kafka\nProfitabilityCalculated", shape=component];
-  reporting [label="Reporting"];
-
-  client -> gateway [label="GraphQL"];
-  gateway -> costing [label="gRPC CalculateCost"];
-  costing -> master [label="gRPC context"];
-  costing -> production [label="gRPC costs"];
-  costing -> financial [label="gRPC overhead"];
-  costing -> kafka1 [label="publish"];
-  kafka1 -> analytics [label="consume"];
-  analytics -> costing [label="gRPC approved cost"];
-  analytics -> financial [label="gRPC sales"];
-  analytics -> kafka2 [label="publish"];
-  kafka2 -> reporting [label="consume"];
+digraph Flow {
+ graph [rankdir=TB,bgcolor="white",pad=0.3];
+ node [shape=box,fontname="DejaVu Sans",fontsize=11,style="rounded,filled",fillcolor="#f5f5f5"];
+ edge [fontname="DejaVu Sans",fontsize=9];
+ a [label="Gateway: user JWT, active session, role"];
+ b [label="Costing: typed gRPC, service JWT\nMaster Data + plan, Production + Financial"];
+ c [label="One transaction\nCostCalculation + OverheadAllocation + OutboxEvent"];
+ d [label="Dispatcher -> Kafka\nretry pending events after recovery"];
+ e [label="Analytics\nrequested cost version + sales\nsame correlationId"];
+ f [label="ProfitabilityCalculated -> Reporting read model"];
+ g [label="GraphQL profitability / summary\nCSV, XLSX, PDF export"];
+ a -> b -> c -> d -> e -> f -> g;
 }
