@@ -12,10 +12,20 @@ from app.config import (
     REPORTING_GRPC_TARGET,
 )
 from app.services.master_data.service import ProductDTO, ExternalMappingDTO
-from app.services.production.service import ImportRunDTO as ProductionImportRunDTO, ImportErrorDTO as ProductionImportErrorDTO
-from app.services.financial.service import ImportRunDTO as FinancialImportRunDTO, ImportErrorDTO as FinancialImportErrorDTO
+from app.services.production.service import (
+    ImportRunDTO as ProductionImportRunDTO,
+    ImportErrorDTO as ProductionImportErrorDTO,
+)
+from app.services.financial.service import (
+    ImportRunDTO as FinancialImportRunDTO,
+    ImportErrorDTO as FinancialImportErrorDTO,
+)
 from app.services.costing.service import CostBreakdownDTO
-from app.services.analytics.service import ProfitabilityDTO, ProfitabilitySummaryDTO, CalculationJobDTO
+from app.services.analytics.service import (
+    ProfitabilityDTO,
+    ProfitabilitySummaryDTO,
+    CalculationJobDTO,
+)
 from app.services.reporting.service import ReportExportDTO
 from app.transport.grpc.bridge import JsonGrpcClient
 
@@ -110,21 +120,69 @@ class GrpcCostingClient:
         if x is None:
             return None
         return CostBreakdownDTO(
-            calculation_id=x["calculation_id"], product_id=x["product_id"], period=_date(x["period"]), version=x["version"],
-            material_cost=Decimal(x["material_cost"]), labor_cost=Decimal(x["labor_cost"]), overhead_cost=Decimal(x["overhead_cost"]),
-            total_cost=Decimal(x["total_cost"]), produced_qty=Decimal(x["produced_qty"]), unit_cost=Decimal(x["unit_cost"]),
+            calculation_id=x["calculation_id"],
+            product_id=x["product_id"],
+            period=_date(x["period"]),
+            version=x["version"],
+            material_cost=Decimal(x["material_cost"]),
+            labor_cost=Decimal(x["labor_cost"]),
+            overhead_cost=Decimal(x["overhead_cost"]),
+            total_cost=Decimal(x["total_cost"]),
+            produced_qty=Decimal(x["produced_qty"]),
+            unit_cost=Decimal(x["unit_cost"]),
+            planned_unit_cost=Decimal(x["planned_unit_cost"])
+            if x.get("planned_unit_cost") is not None
+            else None,
+            unit_cost_deviation=Decimal(x["unit_cost_deviation"])
+            if x.get("unit_cost_deviation") is not None
+            else None,
         )
 
     def get_cost_breakdown(self, product_id, period, version=None):
-        return self._dto(self.rpc.call("GetCostBreakdown", {
-            "product_id": product_id, "period": period.isoformat(), "version": version,
-        }))
+        return self._dto(
+            self.rpc.call(
+                "GetCostBreakdown",
+                {
+                    "product_id": product_id,
+                    "period": period.isoformat(),
+                    "version": version,
+                },
+            )
+        )
 
-    def calculate_costs_remote(self, period: date, product_ids: list[str], allocation_base: str):
-        rows = self.rpc.call("CalculateCost", {
-            "period": period.isoformat(), "product_ids": product_ids, "allocation_base": allocation_base,
-        })
+    def calculate_costs_remote(
+        self, period: date, product_ids: list[str], allocation_base: str
+    ):
+        rows = self.rpc.call(
+            "CalculateCost",
+            {
+                "period": period.isoformat(),
+                "product_ids": product_ids,
+                "allocation_base": allocation_base,
+            },
+        )
         return [self._dto(x) for x in rows]
+
+    def list_center_products(self, cost_center_ids, period_from, period_to):
+        return self.rpc.call(
+            "ListCostCenterProducts",
+            {
+                "cost_center_ids": cost_center_ids,
+                "period_from": period_from.isoformat(),
+                "period_to": period_to.isoformat(),
+            },
+        )
+
+    def list_allocations(self, product_id, period, version=None, cost_center_id=None):
+        return self.rpc.call(
+            "ListOverheadAllocations",
+            {
+                "product_id": product_id,
+                "period": period.isoformat(),
+                "version": version,
+                "cost_center_id": cost_center_id,
+            },
+        )
 
     # Kept only for Protocol compatibility; LR6 orchestration uses calculate_costs_remote.
     def calculate_costs(self, period, items, overhead_amount, allocation_base):

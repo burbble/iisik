@@ -307,19 +307,38 @@ def _financial_server(server, publisher):
 
 def _costing_server(server, publisher):
     service = CostingService()
+    from app.transport.kafka.outbox import OutboxDispatcher
+
+    dispatcher = OutboxDispatcher(publisher)
+    dispatcher.start()
     master = MasterDataDomainClient()
     production = ProductionDomainClient()
     financial = FinancialDomainClient()
 
     def approved(request, context):
         row = service.get_cost_breakdown(
-            request.product_id, date.fromisoformat(request.period), request.version or None
+            request.product_id,
+            date.fromisoformat(request.period),
+            request.version or None,
         )
         if row is None:
             _abort_not_found(context, "Cost calculation was not found")
+        stored = service.repository.find_cost_breakdown(
+            request.product_id,
+            date.fromisoformat(request.period),
+            request.version or None,
+        )
+        if stored.status != "COMPLETED":
+            context.abort(
+                grpc.StatusCode.FAILED_PRECONDITION, "Calculation has been invalidated"
+            )
         return pb.GetApprovedCostCalculationResponse(
-            calculation_id=row.calculation_id, version=row.version, unit_cost=str(row.unit_cost),
-            total_cost=str(row.total_cost), produced_qty=str(row.produced_qty), status="COMPLETED",
+            calculation_id=row.calculation_id,
+            version=row.version,
+            unit_cost=str(row.unit_cost),
+            total_cost=str(row.total_cost),
+            produced_qty=str(row.produced_qty),
+            status="COMPLETED",
         )
 
     add_costing_handler(server, approved)
@@ -335,50 +354,106 @@ def _costing_server(server, publisher):
         allocation_base = p.get("allocation_base") or "DIRECT_COST"
         items = []
         for product_id in product_ids:
-            master.get_costing_context(product_id, period)  # validation + real gRPC hop
-            prod = production.get_cost_data(product_id, period)
-            items.append(ProductCostInput(
-                product_id=product_id,
-                produced_qty=prod.produced_qty,
-                material_cost=prod.material_cost,
-                labor_cost=prod.labor_cost,
-                labor_hours=prod.labor_hours,
-            ))
-        overhead = financial.get_overhead(period)
-        rows = service.calculate_costs(period, items, overhead.total_amount, allocation_base)
-        correlation = None
-        for row in rows:
-            event = EventEnvelope.create(
-                "CostCalculationCompleted", "costing-service",
-                {
-                    "calculationId": row.calculation_id,
-                    "productId": row.product_id,
-                    "period": row.period.isoformat(),
-                    "version": row.version,
-                    "unitCost": str(row.unit_cost),
-                    "totalCost": str(row.total_cost),
-                }, correlation_id=correlation,
+            master_context = master.get_costing_context(product_id, period)
+            plan = JsonGrpcClient(
+                MASTER_DATA_GRPC_TARGET, "profitability.gateway.MasterDataGateway"
+            ).call(
+                "GetPlannedCost",
+                {"product_id": product_id, "period": period.isoformat()},
             )
-            correlation = event.correlationId
-            publisher.publish(event)
+            prod = production.get_cost_data(product_id, period)
+            items.append(
+                ProductCostInput(
+                    product_id=product_id,
+                    produced_qty=prod.produced_qty,
+                    material_cost=prod.material_cost,
+                    labor_cost=prod.labor_cost,
+                    labor_hours=prod.labor_hours,
+                    allocation_lines=prod.allocation_lines,
+                    source_versions={
+                        "master": master_context.data_version,
+                        "production": prod.data_version,
+                        "plan": plan["version"] if plan else None,
+                    },
+                    planned_unit_cost=Decimal(plan["unit_cost"]) if plan else None,
+                )
+            )
+        overhead = financial.get_overhead(period)
+        centers = dict(overhead.items)
+        # Corrections retain their own center; FinancialData returns net center totals.
+        if overhead.correction_amount:
+            raise ValueError(
+                "Financial overhead contract must include corrections by cost center"
+            )
+        for item in items:
+            item.source_versions["financial"] = overhead.data_version
+        rows = service.calculate_costs(
+            period, items, overhead.total_amount, allocation_base, centers
+        )
+        if LAB7_EVENT_BACKEND.lower() == "memory":
+            dispatcher.flush()
+
         return rows
 
-    add_json_service(server, "profitability.gateway.CostingGateway", {
-        "GetCostBreakdown": get_breakdown,
-        "CalculateCost": calculate,
-    })
+    def center_products(p):
+        return service.repository.list_center_products(
+            p["cost_center_ids"],
+            date.fromisoformat(p["period_from"]),
+            date.fromisoformat(p["period_to"]),
+        )
+
+    def allocation_details(p):
+        return service.repository.list_allocations(
+            p["product_id"],
+            date.fromisoformat(p["period"]),
+            p.get("version"),
+            p.get("cost_center_id"),
+        )
+
+    add_json_service(
+        server,
+        "profitability.gateway.CostingGateway",
+        {
+            "ListCostCenterProducts": center_products,
+            "ListOverheadAllocations": allocation_details,
+            "GetCostBreakdown": get_breakdown,
+            "CalculateCost": calculate,
+        },
+    )
 
     if LAB7_EVENT_BACKEND.lower() == "kafka":
+
         def production_ready(event):
+            service.repository.invalidate(date.fromisoformat(event.payload["period"]))
             service.mark_production_ready(date.fromisoformat(event.payload["period"]))
 
         def financial_ready(event):
+            service.repository.invalidate(date.fromisoformat(event.payload["period"]))
             service.mark_financial_ready(date.fromisoformat(event.payload["period"]))
 
         def master_changed(event):
-            # Existing calculations remain versioned; the event marks that a recalculation may be required.
+            service.repository.invalidate()
             cache_delete_prefix("costing-context:")
-            logger.info("master data changed; costing cache invalidated", extra={"service": "costing", "event_type": event.eventType, "correlation_id": event.correlationId})
+            logger.info(
+                "master data changed; costing cache invalidated",
+                extra={
+                    "service": "costing",
+                    "event_type": event.eventType,
+                    "correlation_id": event.correlationId,
+                },
+            )
+
+        def import_failed(event):
+            period = date.fromisoformat(event.payload["period"])
+            service.repository.invalidate(period)
+            service.repository.mark_readiness(
+                period,
+                **(
+                    {"financial": False}
+                    if event.payload["sourceSystem"] == "FINANCE"
+                    else {"production": False}
+                ),
+            )
 
         consumer = KafkaEventConsumer(
             f"{KAFKA_GROUP_PREFIX}-costing",
@@ -386,6 +461,7 @@ def _costing_server(server, publisher):
                 "ProductionDataImported": production_ready,
                 "FinancialDataImported": financial_ready,
                 "MasterDataChanged": master_changed,
+                "ImportFailed": import_failed,
             },
         )
         consumer.start_in_thread("costing-kafka-consumer")

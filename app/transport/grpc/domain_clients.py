@@ -18,7 +18,13 @@ from app.contracts import profitability_pb as pb
 from app.shared.cache import cache_get, cache_set
 from app.shared.errors import NotFoundError
 from app.shared.resilience import call_grpc_with_retry
-from .typed import MasterDataStub, ProductionDataStub, FinancialDataStub, CostingStub, ProfitabilityStub
+from .typed import (
+    MasterDataStub,
+    ProductionDataStub,
+    FinancialDataStub,
+    CostingStub,
+    ProfitabilityStub,
+)
 
 
 @dataclass(frozen=True)
@@ -38,6 +44,7 @@ class ProductionCostData:
     labor_cost: Decimal
     labor_hours: Decimal
     production_order_ids: list[str]
+    allocation_lines: list[dict]
     data_version: str
 
 
@@ -49,7 +56,10 @@ class OverheadData:
 
     @property
     def total_amount(self) -> Decimal:
-        return sum((amount for _, amount in self.items), Decimal("0")) + self.correction_amount
+        return (
+            sum((amount for _, amount in self.items), Decimal("0"))
+            + self.correction_amount
+        )
 
 
 @dataclass(frozen=True)
@@ -84,7 +94,15 @@ class ProfitabilityDetail:
 
 def _call(rpc, request, not_found: str, *, operation: str, target: str):
     try:
-        return call_grpc_with_retry(rpc, request, operation=operation, target=target)
+        return call_grpc_with_retry(
+            rpc,
+            request,
+            operation=operation,
+            target=target,
+            metadata=__import__(
+                "app.transport.grpc.security", fromlist=["rpc_metadata"]
+            ).rpc_metadata(),
+        )
     except grpc.RpcError as exc:
         if exc.code() == grpc.StatusCode.NOT_FOUND:
             raise NotFoundError(not_found) from exc
@@ -109,7 +127,9 @@ class MasterDataDomainClient:
             )
         response = _call(
             self.stub.GetCostingContext,
-            pb.GetCostingContextRequest(product_id=product_id, period=period.isoformat()),
+            pb.GetCostingContextRequest(
+                product_id=product_id, period=period.isoformat()
+            ),
             "Master data for product was not found",
             operation="MasterDataService.GetCostingContext",
             target=self.target,
@@ -123,7 +143,9 @@ class MasterDataDomainClient:
         cache_set(cache_key, value, COSTING_CONTEXT_CACHE_TTL_SECONDS)
         return CostingContext(
             product_id=response.product_id,
-            materials=[(x.material_id, Decimal(x.standard_qty)) for x in response.materials],
+            materials=[
+                (x.material_id, Decimal(x.standard_qty)) for x in response.materials
+            ],
             allocation_base=response.allocation_base,
             data_version=response.data_version,
         )
@@ -138,7 +160,9 @@ class ProductionDomainClient:
     def get_cost_data(self, product_id: str, period: date) -> ProductionCostData:
         response = _call(
             self.stub.GetProductionCostData,
-            pb.GetProductionCostDataRequest(product_id=product_id, period=period.isoformat()),
+            pb.GetProductionCostDataRequest(
+                product_id=product_id, period=period.isoformat()
+            ),
             "Production data for product and period was not found",
             operation="ProductionDataService.GetProductionCostData",
             target=self.target,
@@ -151,6 +175,16 @@ class ProductionDomainClient:
             labor_cost=Decimal(response.labor_cost),
             labor_hours=Decimal(response.labor_hours or "0"),
             production_order_ids=list(response.production_order_ids),
+            allocation_lines=[
+                {
+                    "production_order_id": x.production_order_id,
+                    "cost_center_id": x.cost_center_id,
+                    "VOLUME": x.volume,
+                    "LABOR_HOURS": x.labor_hours,
+                    "DIRECT_COST": x.direct_cost,
+                }
+                for x in response.allocation_lines
+            ],
             data_version=response.data_version,
         )
 
@@ -161,7 +195,9 @@ class FinancialDomainClient:
         self.channel = grpc.insecure_channel(target)
         self.stub = FinancialDataStub(self.channel)
 
-    def get_overhead(self, period: date, cost_center_ids: list[str] | None = None) -> OverheadData:
+    def get_overhead(
+        self, period: date, cost_center_ids: list[str] | None = None
+    ) -> OverheadData:
         request = pb.GetOverheadDataRequest(period=period.isoformat())
         request.cost_center_ids.extend(cost_center_ids or [])
         response = _call(
@@ -201,7 +237,9 @@ class CostingDomainClient:
         self.channel = grpc.insecure_channel(target)
         self.stub = CostingStub(self.channel)
 
-    def get_approved_cost(self, product_id: str, period: date, version: int | None = None) -> ApprovedCost:
+    def get_approved_cost(
+        self, product_id: str, period: date, version: int | None = None
+    ) -> ApprovedCost:
         response = _call(
             self.stub.GetApprovedCostCalculation,
             pb.GetApprovedCostCalculationRequest(
@@ -232,7 +270,9 @@ class ProfitabilityDomainClient:
     def get_detail(self, product_id: str, period: date) -> ProfitabilityDetail:
         response = _call(
             self.stub.GetProfitabilityDetail,
-            pb.GetProfitabilityDetailRequest(product_id=product_id, period=period.isoformat()),
+            pb.GetProfitabilityDetailRequest(
+                product_id=product_id, period=period.isoformat()
+            ),
             "Profitability result was not found",
             operation="ProfitabilityService.GetProfitabilityDetail",
             target=self.target,
