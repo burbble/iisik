@@ -42,29 +42,69 @@ class GrpcMasterDataClient:
     def __init__(self, target=MASTER_DATA_GRPC_TARGET):
         self.rpc = JsonGrpcClient(target, "profitability.gateway.MasterDataGateway")
 
-    def list_products(self, group_id=None, active=None, search=None, sort_by="CODE", sort_direction="ASC"):
-        rows = self.rpc.call("ListProducts", {
-            "group_id": group_id, "active": active, "search": search,
-            "sort_by": sort_by, "sort_direction": sort_direction,
-        })
-        return [ProductDTO(
-            id=x["id"], code=x["code"], name=x["name"], group_id=x["group_id"], unit=x["unit"], active=x["active"]
-        ) for x in rows]
+    def list_products(
+        self,
+        group_id=None,
+        active=None,
+        search=None,
+        sort_by="CODE",
+        sort_direction="ASC",
+    ):
+        rows = self.rpc.call(
+            "ListProducts",
+            {
+                "group_id": group_id,
+                "active": active,
+                "search": search,
+                "sort_by": sort_by,
+                "sort_direction": sort_direction,
+            },
+        )
+        return [
+            ProductDTO(
+                id=x["id"],
+                code=x["code"],
+                name=x["name"],
+                group_id=x["group_id"],
+                unit=x["unit"],
+                active=x["active"],
+            )
+            for x in rows
+        ]
 
     def get_product(self, product_id: str):
         x = self.rpc.call("GetProduct", {"product_id": product_id})
         if x is None:
             return None
-        return ProductDTO(id=x["id"], code=x["code"], name=x["name"], group_id=x["group_id"], unit=x["unit"], active=x["active"])
+        return ProductDTO(
+            id=x["id"],
+            code=x["code"],
+            name=x["name"],
+            group_id=x["group_id"],
+            unit=x["unit"],
+            active=x["active"],
+        )
 
-    def resolve_external_mapping(self, source_system, entity_type, external_code, internal_id):
-        x = self.rpc.call("ResolveExternalMapping", {
-            "source_system": source_system, "entity_type": entity_type,
-            "external_code": external_code, "internal_id": internal_id,
-        })
+    def resolve_external_mapping(
+        self, source_system, entity_type, external_code, internal_id
+    ):
+        x = self.rpc.call(
+            "ResolveExternalMapping",
+            {
+                "source_system": source_system,
+                "entity_type": entity_type,
+                "external_code": external_code,
+                "internal_id": internal_id,
+            },
+        )
         return ExternalMappingDTO(
-            id=x["id"], source_system=x["source_system"], entity_type=x["entity_type"],
-            external_code=x["external_code"], internal_id=x["internal_id"], status=x["status"], updated_at=_dt(x["updated_at"]),
+            id=x["id"],
+            source_system=x["source_system"],
+            entity_type=x["entity_type"],
+            external_code=x["external_code"],
+            internal_id=x["internal_id"],
+            status=x["status"],
+            updated_at=_dt(x["updated_at"]),
         )
 
 
@@ -74,14 +114,25 @@ class _ImportMixin:
 
     def _dto(self, x):
         return self.dto_cls(
-            id=x["id"], source=x["source"], period=_date(x["period"]), status=x["status"],
-            records_loaded=x["records_loaded"], records_failed=x["records_failed"],
-            errors=[self.error_cls(e.get("record_key"), e["error_code"], e["message"]) for e in x.get("errors", [])],
-            started_at=_dt(x["started_at"]), finished_at=_dt(x.get("finished_at")),
+            id=x["id"],
+            source=x["source"],
+            period=_date(x["period"]),
+            status=x["status"],
+            records_loaded=x["records_loaded"],
+            records_failed=x["records_failed"],
+            errors=[
+                self.error_cls(e.get("record_key"), e["error_code"], e["message"])
+                for e in x.get("errors", [])
+            ],
+            started_at=_dt(x["started_at"]),
+            finished_at=_dt(x.get("finished_at")),
         )
 
     def list_import_runs(self, source=None, period=None):
-        rows = self.rpc.call("ListImportRuns", {"source": source, "period": period.isoformat() if period else None})
+        rows = self.rpc.call(
+            "ListImportRuns",
+            {"source": source, "period": period.isoformat() if period else None},
+        )
         return [self._dto(x) for x in rows]
 
     def get_import_run(self, run_id):
@@ -89,7 +140,11 @@ class _ImportMixin:
         return None if x is None else self._dto(x)
 
     def start_import(self, source, period):
-        return self._dto(self.rpc.call("StartImport", {"source": source, "period": period.isoformat()}))
+        return self._dto(
+            self.rpc.call(
+                "StartImport", {"source": source, "period": period.isoformat()}
+            )
+        )
 
     def retry_import(self, run_id):
         return self._dto(self.rpc.call("RetryImport", {"run_id": run_id}))
@@ -197,32 +252,73 @@ class GrpcAnalyticsClient:
     @staticmethod
     def _dto(x):
         return ProfitabilityDTO(
-            id=x["id"], product_id=x["product_id"], period=_date(x["period"]), revenue=Decimal(x["revenue"]),
-            cost_of_sales=Decimal(x["cost_of_sales"]), profit=Decimal(x["profit"]), margin_percent=Decimal(x["margin_percent"]),
+            id=x["id"],
+            product_id=x["product_id"],
+            period=_date(x["period"]),
+            revenue=Decimal(x["revenue"]),
+            cost_of_sales=Decimal(x["cost_of_sales"]),
+            profit=Decimal(x["profit"]),
+            margin_percent=Decimal(x["margin_percent"]),
             calculated_at=_dt(x["calculated_at"]),
         )
 
-    def list_profitability(self, product_ids, period_from, period_to, min_margin_percent=None, sort_by="PERIOD", sort_direction="ASC"):
-        rows = self.rpc.call("ListProfitability", {
-            "product_ids": product_ids, "period_from": period_from.isoformat(), "period_to": period_to.isoformat(),
-            "min_margin_percent": str(min_margin_percent) if min_margin_percent is not None else None,
-            "sort_by": sort_by, "sort_direction": sort_direction,
-        })
+    def list_profitability(
+        self,
+        product_ids,
+        period_from,
+        period_to,
+        min_margin_percent=None,
+        sort_by="PERIOD",
+        sort_direction="ASC",
+    ):
+        rows = self.rpc.call(
+            "ListProfitability",
+            {
+                "product_ids": product_ids,
+                "period_from": period_from.isoformat(),
+                "period_to": period_to.isoformat(),
+                "min_margin_percent": str(min_margin_percent)
+                if min_margin_percent is not None
+                else None,
+                "sort_by": sort_by,
+                "sort_direction": sort_direction,
+            },
+        )
         return [self._dto(x) for x in rows]
 
-    def aggregate_profitability(self, product_ids, period_from, period_to, min_margin_percent=None):
-        x = self.rpc.call("ProfitabilitySummary", {
-            "product_ids": product_ids, "period_from": period_from.isoformat(), "period_to": period_to.isoformat(),
-            "min_margin_percent": str(min_margin_percent) if min_margin_percent is not None else None,
-        })
+    def aggregate_profitability(
+        self, product_ids, period_from, period_to, min_margin_percent=None
+    ):
+        x = self.rpc.call(
+            "ProfitabilitySummary",
+            {
+                "product_ids": product_ids,
+                "period_from": period_from.isoformat(),
+                "period_to": period_to.isoformat(),
+                "min_margin_percent": str(min_margin_percent)
+                if min_margin_percent is not None
+                else None,
+            },
+        )
         return ProfitabilitySummaryDTO(
-            count=x["count"], total_revenue=Decimal(x["total_revenue"]), total_cost=Decimal(x["total_cost"]),
-            total_profit=Decimal(x["total_profit"]), average_margin_percent=Decimal(x["average_margin_percent"]),
+            count=x["count"],
+            total_revenue=Decimal(x["total_revenue"]),
+            total_cost=Decimal(x["total_cost"]),
+            total_profit=Decimal(x["total_profit"]),
+            average_margin_percent=Decimal(x["average_margin_percent"]),
         )
 
     def calculate_profitability_remote(self, period: date, product_ids: list[str]):
-        x = self.rpc.call("CalculateProfitability", {"period": period.isoformat(), "product_ids": product_ids})
-        return CalculationJobDTO(id=x["id"], status=x["status"], period=_date(x["period"]), product_ids=x["product_ids"])
+        x = self.rpc.call(
+            "CalculateProfitability",
+            {"period": period.isoformat(), "product_ids": product_ids},
+        )
+        return CalculationJobDTO(
+            id=x["id"],
+            status=x["status"],
+            period=_date(x["period"]),
+            product_ids=x["product_ids"],
+        )
 
     def calculate_profitability(self, period, items):
         ids = [x.product_id for x in items]
@@ -232,7 +328,12 @@ class GrpcAnalyticsClient:
         x = self.rpc.call("GetCalculationStatus", {"job_id": job_id})
         if x is None:
             return None
-        return CalculationJobDTO(id=x["id"], status=x["status"], period=_date(x["period"]), product_ids=x["product_ids"])
+        return CalculationJobDTO(
+            id=x["id"],
+            status=x["status"],
+            period=_date(x["period"]),
+            product_ids=x["product_ids"],
+        )
 
 
 class GrpcReportingClient:

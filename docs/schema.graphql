@@ -1,67 +1,119 @@
+type AuthPayload {
+  accessToken: String!
+  tokenType: String!
+  expiresAt: String!
+  user: AuthUser!
+}
+
+type AuthUser {
+  id: ID!
+  email: String!
+  roles: [String!]!
+}
+
+type CalculationJob {
+  id: ID!
+  status: CalculationStatus!
+  period: Date!
+  productIds: [ID!]!
+}
+
+enum CalculationStatus {
+  COMPLETED
+  INVALIDATED
+}
+
+type CostBreakdown {
+  calculationId: ID!
+  productId: ID!
+  period: Date!
+  version: Int!
+  materialCost: Decimal!
+  laborCost: Decimal!
+  overheadCost: Decimal!
+  totalCost: Decimal!
+  producedQty: Decimal!
+  unitCost: Decimal!
+  plannedUnitCost: Decimal
+  unitCostDeviation: Decimal
+}
+
+input CostCalculationInput {
+  period: Date!
+  productIds: [ID!]!
+  allocationBase: String!
+}
+
+input CredentialsInput {
+  email: String!
+  password: String!
+}
+
+type CurrentUser {
+  id: ID!
+  email: String!
+  roles: [String!]!
+}
+
+"""Date (isoformat)"""
 scalar Date
+
+"""Date with time (isoformat)"""
 scalar DateTime
+
+"""Decimal (fixed-point)"""
 scalar Decimal
 
-enum ImportSource { ERP MES FINANCE }
-enum ImportStatus { QUEUED RUNNING COMPLETED FAILED }
-enum ExportFormat { XLSX CSV PDF }
-enum CalculationStatus { QUEUED RUNNING COMPLETED FAILED INVALIDATED }
-enum SortDirection { ASC DESC }
-enum ProductSortField { CODE NAME }
-enum ProfitabilitySortField { PERIOD REVENUE PROFIT MARGIN_PERCENT }
+enum ExportFormat {
+  XLSX
+  CSV
+  PDF
+}
 
-type CurrentUser { id: ID!, email: String!, roles: [String!]! }
-type AuthUser { id: ID!, email: String!, roles: [String!]! }
-type AuthPayload { accessToken: String!, tokenType: String!, expiresAt: String!, user: AuthUser! }
-type Product { id: ID!, code: String!, name: String!, groupId: ID!, unit: String!, active: Boolean! }
-type ImportError { recordKey: String, errorCode: String!, message: String! }
-type ImportRun {
-  id: ID!, source: ImportSource!, period: Date!, status: ImportStatus!,
-  recordsLoaded: Int!, recordsFailed: Int!, errors: [ImportError!]!,
-  startedAt: DateTime!, finishedAt: DateTime
+input ExportReportInput {
+  format: ExportFormat!
+  reportId: ID = null
 }
-type CostBreakdown {
-  calculationId: ID!, productId: ID!, period: Date!, version: Int!,
-  materialCost: Decimal!, laborCost: Decimal!, overheadCost: Decimal!,
-  totalCost: Decimal!, producedQty: Decimal!, unitCost: Decimal!
-}
-type ProfitabilityResult {
-  id: ID!, productId: ID!, period: Date!, revenue: Decimal!, costOfSales: Decimal!,
-  profit: Decimal!, marginPercent: Decimal!, calculatedAt: DateTime!
-}
-type ProfitabilitySummary {
-  count: Int!, totalRevenue: Decimal!, totalCost: Decimal!,
-  totalProfit: Decimal!, averageMarginPercent: Decimal!
-}
-type CalculationJob { id: ID!, status: CalculationStatus!, period: Date!, productIds: [ID!]! }
-type ReportExport { id: ID!, status: String!, format: ExportFormat!, fileRef: String, errorMessage: String }
+
 type ExternalMapping {
-  id: ID!, sourceSystem: String!, entityType: String!, externalCode: String!,
-  internalId: ID!, status: String!, updatedAt: DateTime!
+  id: ID!
+  sourceSystem: String!
+  entityType: String!
+  externalCode: String!
+  internalId: ID!
+  status: String!
+  updatedAt: DateTime!
 }
 
-input CredentialsInput { email: String!, password: String! }
-input ProductFilterInput { groupId: ID, active: Boolean, search: String }
-input ProductSortInput { field: ProductSortField = CODE, direction: SortDirection = ASC }
-input ProfitabilityFilterInput {
-  productIds: [ID!], groupIds: [ID!], periodFrom: Date!, periodTo: Date!, minMarginPercent: Decimal
+type ImportError {
+  recordKey: String
+  errorCode: String!
+  message: String!
 }
-input ProfitabilitySortInput { field: ProfitabilitySortField = PERIOD, direction: SortDirection = ASC }
-input StartImportInput { source: ImportSource!, period: Date! }
-input ResolveMappingInput { sourceSystem: String!, entityType: String!, externalCode: String!, internalId: ID! }
-input CostCalculationInput { period: Date!, productIds: [ID!]!, allocationBase: String! }
-input ProfitabilityCalculationInput { period: Date!, productIds: [ID!]! }
-input ExportReportInput { format: ExportFormat!, reportId: ID }
 
-type Query {
-  me: CurrentUser!
-  products(filter: ProductFilterInput, sort: ProductSortInput): [Product!]!
-  importRuns(source: ImportSource, period: Date): [ImportRun!]!
-  costBreakdown(productId: ID!, period: Date!, version: Int): CostBreakdown
-  profitability(filter: ProfitabilityFilterInput!, sort: ProfitabilitySortInput): [ProfitabilityResult!]!
-  profitabilitySummary(filter: ProfitabilityFilterInput!): ProfitabilitySummary!
-  calculationStatus(id: ID!): CalculationJob
-  reportExport(id: ID!): ReportExport
+type ImportRun {
+  id: ID!
+  source: ImportSource!
+  period: Date!
+  status: ImportStatus!
+  recordsLoaded: Int!
+  recordsFailed: Int!
+  errors: [ImportError!]!
+  startedAt: DateTime!
+  finishedAt: DateTime
+}
+
+enum ImportSource {
+  ERP
+  MES
+  FINANCE
+}
+
+enum ImportStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
 }
 
 type Mutation {
@@ -75,4 +127,120 @@ type Mutation {
   calculateCost(input: CostCalculationInput!): [CostBreakdown!]!
   calculateProfitability(input: ProfitabilityCalculationInput!): CalculationJob!
   exportReport(input: ExportReportInput!): ReportExport!
+}
+
+type OverheadAllocation {
+  calculationId: ID!
+  productionOrderId: ID!
+  costCenterId: ID!
+  basisType: String!
+  basisValue: Decimal!
+  amount: Decimal!
+}
+
+type Product {
+  id: ID!
+  code: String!
+  name: String!
+  groupId: ID!
+  unit: String!
+  active: Boolean!
+}
+
+input ProductFilterInput {
+  groupId: ID = null
+  active: Boolean = null
+  search: String = null
+}
+
+enum ProductSortField {
+  CODE
+  NAME
+}
+
+input ProductSortInput {
+  field: ProductSortField! = CODE
+  direction: SortDirection! = ASC
+}
+
+input ProfitabilityCalculationInput {
+  period: Date!
+  productIds: [ID!]!
+}
+
+input ProfitabilityFilterInput {
+  periodFrom: Date!
+  periodTo: Date!
+  productIds: [ID!] = null
+  groupIds: [ID!] = null
+  minMarginPercent: Decimal = null
+  costCenterIds: [ID!] = null
+}
+
+type ProfitabilityResult {
+  id: ID!
+  productId: ID!
+  period: Date!
+  revenue: Decimal!
+  costOfSales: Decimal!
+  profit: Decimal!
+  marginPercent: Decimal!
+  calculatedAt: DateTime!
+}
+
+enum ProfitabilitySortField {
+  PERIOD
+  REVENUE
+  PROFIT
+  MARGIN_PERCENT
+}
+
+input ProfitabilitySortInput {
+  field: ProfitabilitySortField! = PERIOD
+  direction: SortDirection! = ASC
+}
+
+type ProfitabilitySummary {
+  count: Int!
+  totalRevenue: Decimal!
+  totalCost: Decimal!
+  totalProfit: Decimal!
+  averageMarginPercent: Decimal!
+}
+
+type Query {
+  me: CurrentUser!
+  products(filter: ProductFilterInput = null, sort: ProductSortInput = null): [Product!]!
+  importRuns(source: ImportSource = null, period: Date = null): [ImportRun!]!
+  costBreakdown(productId: ID!, period: Date!, version: Int = null): CostBreakdown
+  overheadAllocations(productId: ID!, period: Date!, version: Int = null, costCenterId: ID = null): [OverheadAllocation!]!
+  profitability(filter: ProfitabilityFilterInput!, sort: ProfitabilitySortInput = null): [ProfitabilityResult!]!
+  profitabilitySummary(filter: ProfitabilityFilterInput!): ProfitabilitySummary!
+  calculationStatus(id: ID!): CalculationJob
+  reportExport(id: ID!): ReportExport
+}
+
+type ReportExport {
+  id: ID!
+  status: String!
+  format: ExportFormat!
+  fileRef: String
+  errorMessage: String
+}
+
+input ResolveMappingInput {
+  sourceSystem: String!
+  entityType: String!
+  externalCode: String!
+  internalId: ID!
+}
+
+enum SortDirection {
+  ASC
+  DESC
+}
+
+input StartImportInput {
+  source: ImportSource!
+  period: Date!
 }

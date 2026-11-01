@@ -25,10 +25,7 @@ class ImportStatus(Enum):
 
 @strawberry.enum
 class CalculationStatus(Enum):
-    QUEUED = "QUEUED"
-    RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
     INVALIDATED = "INVALIDATED"
 
 
@@ -79,6 +76,7 @@ class ProfitabilityFilterInput:
     product_ids: list[strawberry.ID] | None = None
     group_ids: list[strawberry.ID] | None = None
     min_margin_percent: Decimal | None = None
+    cost_center_ids: list[strawberry.ID] | None = None
 
 
 @strawberry.input(name="ProfitabilitySortInput")
@@ -190,6 +188,18 @@ class CostBreakdownType:
     total_cost: Decimal
     produced_qty: Decimal
     unit_cost: Decimal
+    planned_unit_cost: Decimal | None
+    unit_cost_deviation: Decimal | None
+
+
+@strawberry.type(name="OverheadAllocation")
+class OverheadAllocationType:
+    calculation_id: strawberry.ID
+    production_order_id: strawberry.ID
+    cost_center_id: strawberry.ID
+    basis_type: str
+    basis_value: Decimal
+    amount: Decimal
 
 
 @strawberry.type(name="ProfitabilityResult")
@@ -260,7 +270,9 @@ def import_run_type(dto) -> ImportRunType:
         status=ImportStatus(dto.status),
         records_loaded=dto.records_loaded,
         records_failed=dto.records_failed,
-        errors=[ImportErrorType(e.record_key, e.error_code, e.message) for e in dto.errors],
+        errors=[
+            ImportErrorType(e.record_key, e.error_code, e.message) for e in dto.errors
+        ],
         started_at=dto.started_at,
         finished_at=dto.finished_at,
     )
@@ -278,6 +290,8 @@ def cost_type(row) -> CostBreakdownType:
         total_cost=row.total_cost,
         produced_qty=row.produced_qty,
         unit_cost=row.unit_cost,
+        planned_unit_cost=row.planned_unit_cost,
+        unit_cost_deviation=row.unit_cost_deviation,
     )
 
 
@@ -320,8 +334,11 @@ class Query:
         actor = info.context.get("actor")
         if actor is None:
             from app.shared.errors import AuthenticationError
+
             raise AuthenticationError("Authentication required")
-        return CurrentUserType(id=actor.user_id, email=actor.email, roles=list(actor.roles))
+        return CurrentUserType(
+            id=actor.user_id, email=actor.email, roles=list(actor.roles)
+        )
 
     @strawberry.field
     def products(
@@ -364,8 +381,38 @@ class Query:
         period: date,
         version: int | None = None,
     ) -> CostBreakdownType | None:
-        row = info.context["facade"].cost_breakdown(info.context.get("actor"), str(product_id), period, version)
+        row = info.context["facade"].cost_breakdown(
+            info.context.get("actor"), str(product_id), period, version
+        )
         return None if row is None else cost_type(row)
+
+    @strawberry.field
+    def overhead_allocations(
+        self,
+        info: Info,
+        product_id: strawberry.ID,
+        period: date,
+        version: int | None = None,
+        cost_center_id: strawberry.ID | None = None,
+    ) -> list[OverheadAllocationType]:
+        rows = info.context["facade"].overhead_allocations(
+            info.context.get("actor"),
+            str(product_id),
+            period,
+            version,
+            str(cost_center_id) if cost_center_id is not None else None,
+        )
+        return [
+            OverheadAllocationType(
+                calculation_id=r["calculation_id"],
+                production_order_id=r["production_order_id"],
+                cost_center_id=r["cost_center_id"],
+                basis_type=r["basis_type"],
+                basis_value=Decimal(r["basis_value"]),
+                amount=Decimal(r["amount"]),
+            )
+            for r in rows
+        ]
 
     @strawberry.field
     def profitability(
@@ -377,11 +424,18 @@ class Query:
         s = sort or ProfitabilitySortInput()
         rows = info.context["facade"].profitability(
             info.context.get("actor"),
-            product_ids=[str(x) for x in filter.product_ids] if filter.product_ids else None,
-            group_ids=[str(x) for x in filter.group_ids] if filter.group_ids else None,
+            product_ids=[str(x) for x in filter.product_ids]
+            if filter.product_ids is not None
+            else None,
+            group_ids=[str(x) for x in filter.group_ids]
+            if filter.group_ids is not None
+            else None,
             period_from=filter.period_from,
             period_to=filter.period_to,
             min_margin_percent=filter.min_margin_percent,
+            cost_center_ids=[str(x) for x in filter.cost_center_ids]
+            if filter.cost_center_ids is not None
+            else None,
             sort_by=s.field.value,
             sort_direction=s.direction.value,
         )
@@ -395,11 +449,18 @@ class Query:
     ) -> ProfitabilitySummaryType:
         row = info.context["facade"].profitability_summary(
             info.context.get("actor"),
-            product_ids=[str(x) for x in filter.product_ids] if filter.product_ids else None,
-            group_ids=[str(x) for x in filter.group_ids] if filter.group_ids else None,
+            product_ids=[str(x) for x in filter.product_ids]
+            if filter.product_ids is not None
+            else None,
+            group_ids=[str(x) for x in filter.group_ids]
+            if filter.group_ids is not None
+            else None,
             period_from=filter.period_from,
             period_to=filter.period_to,
             min_margin_percent=filter.min_margin_percent,
+            cost_center_ids=[str(x) for x in filter.cost_center_ids]
+            if filter.cost_center_ids is not None
+            else None,
         )
         return ProfitabilitySummaryType(
             count=row.count,
@@ -410,8 +471,12 @@ class Query:
         )
 
     @strawberry.field
-    def calculation_status(self, info: Info, id: strawberry.ID) -> CalculationJobType | None:
-        row = info.context["facade"].calculation_status(info.context.get("actor"), str(id))
+    def calculation_status(
+        self, info: Info, id: strawberry.ID
+    ) -> CalculationJobType | None:
+        row = info.context["facade"].calculation_status(
+            info.context.get("actor"), str(id)
+        )
         return None if row is None else job_type(row)
 
     @strawberry.field
@@ -425,7 +490,9 @@ class Mutation:
     @strawberry.mutation
     def register(self, info: Info, input: CredentialsInput) -> AuthUserType:
         actor = info.context["auth_client"].register(input.email, input.password)
-        return AuthUserType(id=actor.user_id, email=actor.email, roles=list(actor.roles))
+        return AuthUserType(
+            id=actor.user_id, email=actor.email, roles=list(actor.roles)
+        )
 
     @strawberry.mutation
     def login(self, info: Info, input: CredentialsInput) -> AuthPayloadType:
@@ -434,7 +501,9 @@ class Mutation:
             access_token=result.access_token,
             token_type=result.token_type,
             expires_at=result.expires_at,
-            user=AuthUserType(id=result.user_id, email=result.email, roles=list(result.roles)),
+            user=AuthUserType(
+                id=result.user_id, email=result.email, roles=list(result.roles)
+            ),
         )
 
     @strawberry.mutation
@@ -442,26 +511,39 @@ class Mutation:
         token = info.context.get("access_token")
         if not token:
             from app.shared.errors import AuthenticationError
+
             raise AuthenticationError("Authentication required")
         info.context["auth_client"].logout(token)
         return True
 
     @strawberry.mutation
-    def start_production_import(self, info: Info, input: StartImportInput) -> ImportRunType:
-        row = info.context["facade"].start_production_import(info.context.get("actor"), input.source.value, input.period)
+    def start_production_import(
+        self, info: Info, input: StartImportInput
+    ) -> ImportRunType:
+        row = info.context["facade"].start_production_import(
+            info.context.get("actor"), input.source.value, input.period
+        )
         return import_run_type(row)
 
     @strawberry.mutation
-    def start_financial_import(self, info: Info, input: StartImportInput) -> ImportRunType:
-        row = info.context["facade"].start_financial_import(info.context.get("actor"), input.source.value, input.period)
+    def start_financial_import(
+        self, info: Info, input: StartImportInput
+    ) -> ImportRunType:
+        row = info.context["facade"].start_financial_import(
+            info.context.get("actor"), input.source.value, input.period
+        )
         return import_run_type(row)
 
     @strawberry.mutation
     def retry_import(self, info: Info, id: strawberry.ID) -> ImportRunType:
-        return import_run_type(info.context["facade"].retry_import(info.context.get("actor"), str(id)))
+        return import_run_type(
+            info.context["facade"].retry_import(info.context.get("actor"), str(id))
+        )
 
     @strawberry.mutation
-    def resolve_external_mapping(self, info: Info, input: ResolveMappingInput) -> ExternalMappingType:
+    def resolve_external_mapping(
+        self, info: Info, input: ResolveMappingInput
+    ) -> ExternalMappingType:
         row = info.context["facade"].resolve_external_mapping(
             info.context.get("actor"),
             input.source_system,
@@ -480,7 +562,9 @@ class Mutation:
         )
 
     @strawberry.mutation
-    def calculate_cost(self, info: Info, input: CostCalculationInput) -> list[CostBreakdownType]:
+    def calculate_cost(
+        self, info: Info, input: CostCalculationInput
+    ) -> list[CostBreakdownType]:
         rows = info.context["facade"].calculate_cost(
             info.context.get("actor"),
             period=input.period,
