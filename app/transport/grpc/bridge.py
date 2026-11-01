@@ -10,8 +10,18 @@ from typing import Callable
 import grpc
 from google.protobuf.wrappers_pb2 import StringValue
 
-from app.config import GRPC_MAX_ATTEMPTS, GRPC_RETRY_BACKOFF_SECONDS, GRPC_TIMEOUT_SECONDS
-from app.shared.errors import AuthenticationError, AuthorizationError, ConflictError, NotFoundError, ValidationError
+from app.config import (
+    GRPC_MAX_ATTEMPTS,
+    GRPC_RETRY_BACKOFF_SECONDS,
+    GRPC_TIMEOUT_SECONDS,
+)
+from app.shared.errors import (
+    AuthenticationError,
+    AuthorizationError,
+    ConflictError,
+    NotFoundError,
+    ValidationError,
+)
 from app.shared.logging_config import get_logger
 from app.shared.resilience import RetryPolicy, call_grpc_with_retry
 
@@ -32,7 +42,9 @@ def to_jsonable(value):
     if isinstance(value, (list, tuple, set)):
         return [to_jsonable(v) for v in value]
     if hasattr(value, "__dict__"):
-        return {k: to_jsonable(v) for k, v in vars(value).items() if not k.startswith("_")}
+        return {
+            k: to_jsonable(v) for k, v in vars(value).items() if not k.startswith("_")
+        }
     return str(value)
 
 
@@ -58,19 +70,31 @@ def json_method(fn: Callable, operation: str):
             result = fn(payload)
             logger.info(
                 "gRPC server method completed",
-                extra={"operation": operation, "duration_ms": round((time.perf_counter() - started) * 1000, 2)},
+                extra={
+                    "operation": operation,
+                    "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                },
             )
-            return StringValue(value=json.dumps(to_jsonable(result), ensure_ascii=False))
+            return StringValue(
+                value=json.dumps(to_jsonable(result), ensure_ascii=False)
+            )
         except Exception as exc:
             logger.exception(
                 "gRPC server method failed",
-                extra={"operation": operation, "error_type": type(exc).__name__, "duration_ms": round((time.perf_counter() - started) * 1000, 2)},
+                extra={
+                    "operation": operation,
+                    "error_type": type(exc).__name__,
+                    "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                },
             )
             context.abort(_status_for(exc), str(exc))
+
     return handler
 
 
-def add_json_service(server: grpc.Server, service_name: str, methods: dict[str, Callable]):
+def add_json_service(
+    server: grpc.Server, service_name: str, methods: dict[str, Callable]
+):
     handlers = {}
     for method_name, fn in methods.items():
         handlers[method_name] = grpc.unary_unary_rpc_method_handler(
@@ -78,7 +102,9 @@ def add_json_service(server: grpc.Server, service_name: str, methods: dict[str, 
             request_deserializer=StringValue.FromString,
             response_serializer=StringValue.SerializeToString,
         )
-    server.add_generic_rpc_handlers((grpc.method_handlers_generic_handler(service_name, handlers),))
+    server.add_generic_rpc_handlers(
+        (grpc.method_handlers_generic_handler(service_name, handlers),)
+    )
 
 
 class JsonGrpcClient:
@@ -92,7 +118,11 @@ class JsonGrpcClient:
     ):
         self.target = target
         self.service_name = service_name
-        self.policy = RetryPolicy(timeout_seconds=timeout, max_attempts=max_attempts, backoff_seconds=backoff_seconds)
+        self.policy = RetryPolicy(
+            timeout_seconds=timeout,
+            max_attempts=max_attempts,
+            backoff_seconds=backoff_seconds,
+        )
         self.channel = grpc.insecure_channel(target)
 
     def call(self, method: str, payload: dict | None = None):
@@ -107,7 +137,15 @@ class JsonGrpcClient:
                 StringValue(value=json.dumps(payload or {}, ensure_ascii=False)),
                 operation=f"{self.service_name}.{method}",
                 target=self.target,
-                policy=self.policy,
+                metadata=__import__(
+                    "app.transport.grpc.security", fromlist=["rpc_metadata"]
+                ).rpc_metadata(),
+                policy=self.policy
+                if method.startswith(("Get", "List", "Lookup"))
+                or method == "ProfitabilitySummary"
+                else RetryPolicy(
+                    timeout_seconds=self.policy.timeout_seconds, max_attempts=1
+                ),
             )
         except grpc.RpcError as exc:
             code = exc.code()

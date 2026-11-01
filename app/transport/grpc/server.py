@@ -713,7 +713,12 @@ def build_server(service_name: str, *, port: int | None = None, publisher=None):
     if service_name not in BUILDERS:
         raise ValueError(f"Unknown service: {service_name}")
     configured_port, builder = BUILDERS[service_name]
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=16))
+    from app.transport.grpc.security import InternalAuthorization
+
+    server = grpc.server(
+        futures.ThreadPoolExecutor(max_workers=16),
+        interceptors=[InternalAuthorization()],
+    )
     builder(server, publisher or _publisher())
     bind_port = port if port is not None else configured_port
     actual_port = server.add_insecure_port(f"0.0.0.0:{bind_port}")
@@ -725,10 +730,16 @@ def main():
     parser.add_argument("service", choices=sorted(BUILDERS))
     parser.add_argument("--port", type=int, default=None)
     args = parser.parse_args()
+    os.environ["RPC_SERVICE_ID"] = args.service
+    if not os.environ.get("INTERNAL_JWT_SECRET"):
+        raise RuntimeError("Set INTERNAL_JWT_SECRET for standalone services")
     init_databases()
     server, port = build_server(args.service, port=args.port)
     server.start()
-    logger.info("gRPC server listening", extra={"service": args.service, "operation": f"port:{port}"})
+    logger.info(
+        "gRPC server listening",
+        extra={"service": args.service, "operation": f"port:{port}"},
+    )
     server.wait_for_termination()
 
 

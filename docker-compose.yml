@@ -51,6 +51,7 @@ services:
       LAB7_DATA_DIR: /data
     volumes:
       - ./runtime-data:/data
+      - ./examples/imports:/imports:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -68,6 +69,7 @@ services:
       start_period: 5s
     environment: &common-env
       LAB7_DATA_DIR: /data
+      IMPORT_DATA_DIR: /imports
       LAB7_EVENT_BACKEND: kafka
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_TOPIC: profitability.events
@@ -80,6 +82,7 @@ services:
       GRPC_TIMEOUT_SECONDS: 2.0
       GRPC_MAX_ATTEMPTS: 3
       GRPC_RETRY_BACKOFF_SECONDS: 0.05
+      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?Set INTERNAL_JWT_SECRET in .env}
       LOG_LEVEL: INFO
       MASTER_DATA_GRPC_TARGET: master-data:50051
       PRODUCTION_GRPC_TARGET: production:50052
@@ -89,11 +92,10 @@ services:
       REPORTING_GRPC_TARGET: reporting:50056
     volumes:
       - ./runtime-data:/data
+      - ./examples/imports:/imports:ro
     depends_on:
       kafka:
         condition: service_healthy
-    ports:
-      - "50051:50051"
 
   production:
     build: .
@@ -107,11 +109,10 @@ services:
     environment: *common-env
     volumes:
       - ./runtime-data:/data
+      - ./examples/imports:/imports:ro
     depends_on:
       kafka:
         condition: service_healthy
-    ports:
-      - "50052:50052"
 
   financial:
     build: .
@@ -125,11 +126,10 @@ services:
     environment: *common-env
     volumes:
       - ./runtime-data:/data
+      - ./examples/imports:/imports:ro
     depends_on:
       kafka:
         condition: service_healthy
-    ports:
-      - "50053:50053"
 
   costing:
     build: .
@@ -143,6 +143,7 @@ services:
     environment: *common-env
     volumes:
       - ./runtime-data:/data
+      - ./examples/imports:/imports:ro
     depends_on:
       kafka:
         condition: service_healthy
@@ -154,8 +155,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    ports:
-      - "50054:50054"
 
   analytics:
     build: .
@@ -169,6 +168,7 @@ services:
     environment: *common-env
     volumes:
       - ./runtime-data:/data
+      - ./examples/imports:/imports:ro
     depends_on:
       kafka:
         condition: service_healthy
@@ -178,8 +178,6 @@ services:
         condition: service_healthy
       master-data:
         condition: service_healthy
-    ports:
-      - "50055:50055"
 
   reporting:
     build: .
@@ -193,11 +191,10 @@ services:
     environment: *common-env
     volumes:
       - ./runtime-data:/data
+      - ./examples/imports:/imports:ro
     depends_on:
       kafka:
         condition: service_healthy
-    ports:
-      - "50056:50056"
 
   gateway:
     build: .
@@ -220,9 +217,11 @@ services:
       GRPC_TIMEOUT_SECONDS: 2.0
       GRPC_MAX_ATTEMPTS: 3
       GRPC_RETRY_BACKOFF_SECONDS: 0.05
+      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?Set INTERNAL_JWT_SECRET in .env}
       LOG_LEVEL: INFO
     volumes:
       - ./runtime-data:/data
+      - ./examples/imports:/imports:ro
     depends_on:
       auth:
         condition: service_healthy
