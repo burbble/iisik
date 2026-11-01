@@ -471,15 +471,22 @@ def _analytics_server(server, publisher):
     service = ProfitabilityAnalyticsService()
     costing = CostingDomainClient()
     financial = FinancialDomainClient()
-    master_bridge = JsonGrpcClient(MASTER_DATA_GRPC_TARGET, "profitability.gateway.MasterDataGateway")
+    master_bridge = JsonGrpcClient(
+        MASTER_DATA_GRPC_TARGET, "profitability.gateway.MasterDataGateway"
+    )
 
     def detail(request, context):
-        row = service.get_profitability_detail(request.product_id, date.fromisoformat(request.period))
+        row = service.get_profitability_detail(
+            request.product_id, date.fromisoformat(request.period)
+        )
         if row is None:
             _abort_not_found(context, "Profitability result was not found")
         return pb.GetProfitabilityDetailResponse(
-            result_id=row.id, revenue=str(row.revenue), cost_of_sales=str(row.cost_of_sales),
-            profit=str(row.profit), margin_percent=str(row.margin_percent),
+            result_id=row.id,
+            revenue=str(row.revenue),
+            cost_of_sales=str(row.cost_of_sales),
+            profit=str(row.profit),
+            margin_percent=str(row.margin_percent),
             calculated_at=row.calculated_at.isoformat(),
         )
 
@@ -490,45 +497,64 @@ def _analytics_server(server, publisher):
             product_ids=p.get("product_ids"),
             period_from=date.fromisoformat(p["period_from"]),
             period_to=date.fromisoformat(p["period_to"]),
-            min_margin_percent=Decimal(p["min_margin_percent"]) if p.get("min_margin_percent") is not None else None,
-            sort_by=p.get("sort_by", "PERIOD"), sort_direction=p.get("sort_direction", "ASC"),
+            min_margin_percent=Decimal(p["min_margin_percent"])
+            if p.get("min_margin_percent") is not None
+            else None,
+            sort_by=p.get("sort_by", "PERIOD"),
+            sort_direction=p.get("sort_direction", "ASC"),
         )
 
     def summary(p):
         return service.aggregate_profitability(
-            p.get("product_ids"), date.fromisoformat(p["period_from"]), date.fromisoformat(p["period_to"]),
-            Decimal(p["min_margin_percent"]) if p.get("min_margin_percent") is not None else None,
+            p.get("product_ids"),
+            date.fromisoformat(p["period_from"]),
+            date.fromisoformat(p["period_to"]),
+            Decimal(p["min_margin_percent"])
+            if p.get("min_margin_percent") is not None
+            else None,
         )
 
-    def calculate_for(period: date, product_ids: list[str]):
+    def calculate_for(
+        period: date, product_ids: list[str], version=None, correlation_id=None
+    ):
         items = []
         for product_id in product_ids:
-            cost = costing.get_approved_cost(product_id, period)
+            cost = costing.get_approved_cost(product_id, period, version)
             sales = financial.get_sales(product_id, period)
-            items.append(ProfitabilityCalculationInput(
-                calculation_id=cost.calculation_id,
-                product_id=product_id,
-                unit_cost=cost.unit_cost,
-                sold_quantity=sales.sold_qty,
-                revenue=sales.revenue,
-            ))
+            items.append(
+                ProfitabilityCalculationInput(
+                    calculation_id=cost.calculation_id,
+                    product_id=product_id,
+                    unit_cost=cost.unit_cost,
+                    sold_quantity=sales.sold_qty,
+                    revenue=sales.revenue,
+                    cost_version=cost.version,
+                )
+            )
         job = service.calculate_profitability(period, items)
-        for product_id in product_ids:
-            row = service.get_profitability_detail(product_id, period)
+        for item in items:
+            product_id = item.product_id
+            stored = service.repository.get_by_calculation(item.calculation_id)
+            row = service._dto(stored)
             product = master_bridge.call("GetProduct", {"product_id": product_id}) or {}
-            publisher.publish(EventEnvelope.create(
-                "ProfitabilityCalculated", "profitability-analytics-service",
-                {
-                    "resultId": row.id,
-                    "productId": product_id,
-                    "groupId": product.get("group_id", ""),
-                    "period": period.isoformat(),
-                    "revenue": str(row.revenue),
-                    "costOfSales": str(row.cost_of_sales),
-                    "profit": str(row.profit),
-                    "marginPercent": str(row.margin_percent),
-                },
-            ))
+            publisher.publish(
+                EventEnvelope.create(
+                    "ProfitabilityCalculated",
+                    "profitability-analytics-service",
+                    {
+                        "resultId": row.id,
+                        "productId": product_id,
+                        "groupId": product.get("group_id", ""),
+                        "period": period.isoformat(),
+                        "revenue": str(row.revenue),
+                        "costOfSales": str(row.cost_of_sales),
+                        "profit": str(row.profit),
+                        "marginPercent": str(row.margin_percent),
+                        "costVersion": item.cost_version,
+                    },
+                    correlation_id=correlation_id,
+                )
+            )
         return job
 
     def calculate(p):
@@ -537,24 +563,55 @@ def _analytics_server(server, publisher):
     def status(p):
         return service.get_calculation_status(p["job_id"])
 
-    add_json_service(server, "profitability.gateway.AnalyticsGateway", {
-        "ListProfitability": list_profitability,
-        "ProfitabilitySummary": summary,
-        "CalculateProfitability": calculate,
-        "GetCalculationStatus": status,
-    })
+    add_json_service(
+        server,
+        "profitability.gateway.AnalyticsGateway",
+        {
+            "ListProfitability": list_profitability,
+            "ProfitabilitySummary": summary,
+            "CalculateProfitability": calculate,
+            "GetCalculationStatus": status,
+        },
+    )
 
     if LAB7_EVENT_BACKEND.lower() == "kafka":
+
         def cost_completed(event):
             try:
-                calculate_for(date.fromisoformat(event.payload["period"]), [event.payload["productId"]])
+                calculate_for(
+                    date.fromisoformat(event.payload["period"]),
+                    [event.payload["productId"]],
+                    event.payload["version"],
+                    event.correlationId,
+                )
             except Exception as exc:
-                logger.exception("analytics failed to process CostCalculationCompleted", extra={"service": "analytics", "event_type": event.eventType, "correlation_id": event.correlationId, "error_type": type(exc).__name__})
+                logger.exception(
+                    "analytics failed to process CostCalculationCompleted",
+                    extra={
+                        "service": "analytics",
+                        "event_type": event.eventType,
+                        "correlation_id": event.correlationId,
+                        "error_type": type(exc).__name__,
+                    },
+                )
                 raise
+
+        def invalidate_analytics(event):
+            service.repository.invalidate(
+                date.fromisoformat(event.payload["period"])
+                if event.payload.get("period")
+                else None
+            )
 
         consumer = KafkaEventConsumer(
             f"{KAFKA_GROUP_PREFIX}-analytics",
-            {"CostCalculationCompleted": cost_completed},
+            {
+                "CostCalculationCompleted": cost_completed,
+                "ProductionDataImported": invalidate_analytics,
+                "FinancialDataImported": invalidate_analytics,
+                "ImportFailed": invalidate_analytics,
+                "MasterDataChanged": invalidate_analytics,
+            },
         )
         consumer.start_in_thread("analytics-kafka-consumer")
 

@@ -44,6 +44,7 @@ class ProfitabilityCalculationInput:
     unit_cost: Decimal
     sold_quantity: Decimal
     revenue: Decimal
+    cost_version: int = 0
 
 
 class ProfitabilityAnalyticsService:
@@ -88,7 +89,9 @@ class ProfitabilityAnalyticsService:
         )
         return [self._dto(row) for row in rows]
 
-    def aggregate_profitability(self, product_ids, period_from, period_to, min_margin_percent=None):
+    def aggregate_profitability(
+        self, product_ids, period_from, period_to, min_margin_percent=None
+    ):
         rows = self.list_profitability(
             product_ids=product_ids,
             period_from=period_from,
@@ -106,9 +109,9 @@ class ProfitabilityAnalyticsService:
         total_revenue = sum((r.revenue for r in rows), Decimal("0"))
         total_cost = sum((r.cost_of_sales for r in rows), Decimal("0"))
         total_profit = sum((r.profit for r in rows), Decimal("0"))
-        avg_margin = (sum((r.margin_percent for r in rows), Decimal("0")) / len(rows)).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
+        avg_margin = (
+            sum((r.margin_percent for r in rows), Decimal("0")) / len(rows)
+        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         return ProfitabilitySummaryDTO(
             count=len(rows),
             total_revenue=total_revenue,
@@ -123,7 +126,9 @@ class ProfitabilityAnalyticsService:
         items: list[ProfitabilityCalculationInput],
     ) -> CalculationJobDTO:
         if not items:
-            raise ValidationError("At least one product is required for profitability calculation")
+            raise ValidationError(
+                "At least one product is required for profitability calculation"
+            )
         now = datetime.now()
         product_ids: list[str] = []
         for item in items:
@@ -131,12 +136,19 @@ class ProfitabilityAnalyticsService:
                 raise ValidationError("Revenue must be greater than zero")
             if item.sold_quantity < 0 or item.unit_cost < 0:
                 raise ValidationError("Quantity and unit cost cannot be negative")
-            cost_of_sales = (item.unit_cost * item.sold_quantity).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            profit = (item.revenue - cost_of_sales).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            margin = ((profit / item.revenue) * Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            cost_of_sales = (item.unit_cost * item.sold_quantity).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+            profit = (item.revenue - cost_of_sales).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+            margin = ((profit / item.revenue) * Decimal("100")).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
             row = ProfitabilityResult(
                 result_id=str(uuid4()),
                 calculation_id=item.calculation_id,
+                cost_version=item.cost_version,
                 product_id=item.product_id,
                 period=period,
                 revenue=item.revenue,
