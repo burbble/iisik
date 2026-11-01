@@ -1,4 +1,5 @@
 import pytest
+
 pytest.importorskip("strawberry")
 
 from app.bootstrap import get_container
@@ -20,13 +21,17 @@ def context(actor):
 
 def test_me_returns_verified_user_context():
     actor = Actor(USER_ID, "analyst@example.local", ("ANALYST",), "session")
-    result = schema.execute_sync("{ me { id email roles } }", context_value=context(actor))
+    result = schema.execute_sync(
+        "{ me { id email roles } }", context_value=context(actor)
+    )
     assert result.errors is None
     assert result.data["me"]["id"] == USER_ID
     assert "ANALYST" in result.data["me"]["roles"]
 
 
 def test_protected_query_without_actor_returns_error():
-    result = schema.execute_sync("{ products { id code } }", context_value=context(None))
+    result = schema.execute_sync(
+        "{ products { id code } }", context_value=context(None)
+    )
     assert result.errors
     assert "Authentication required" in str(result.errors[0])

@@ -17,7 +17,9 @@ def auth_fixture():
     sessions = InMemorySessionStore()
     service = AuthService(
         sessions=sessions,
-        tokens=JWTManager("test-secret-that-is-long-enough-1234567890", ttl_seconds=3600),
+        tokens=JWTManager(
+            "test-secret-that-is-long-enough-1234567890", ttl_seconds=3600
+        ),
     )
     return service, sessions
 

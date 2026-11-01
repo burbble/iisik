@@ -17,7 +17,7 @@ from app.scripts.seed import (
     MANAGER_USER_ID,
     clear_and_seed,
 )
-from app.shared.errors import AuthorizationError, ConflictError
+from app.shared.errors import AuthorizationError
 from app.shared.security import Actor
 
 
@@ -31,7 +31,12 @@ def facade():
 
 
 def actor(user_id=USER_ID, role="ANALYST"):
-    return Actor(user_id=user_id, email=f"{role.lower()}@example.local", roles=(role,), session_id="test-session")
+    return Actor(
+        user_id=user_id,
+        email=f"{role.lower()}@example.local",
+        roles=(role,),
+        session_id="test-session",
+    )
 
 
 def test_query_filter_sort_and_group_filter():
@@ -82,16 +87,24 @@ def test_financial_import_is_role_protected():
     row = f.start_financial_import(finance, "FINANCE", date(2026, 10, 1))
     assert row.status == "COMPLETED"
     with pytest.raises(AuthorizationError):
-        f.start_financial_import(actor(PRODUCTION_USER_ID, "PRODUCTION_ACCOUNTANT"), "FINANCE", date(2026, 11, 1))
+        f.start_financial_import(
+            actor(PRODUCTION_USER_ID, "PRODUCTION_ACCOUNTANT"),
+            "FINANCE",
+            date(2026, 11, 1),
+        )
 
 
 def test_retry_import_is_routed_through_grpc_clients():
-    row = facade().retry_import(actor(PRODUCTION_USER_ID, "PRODUCTION_ACCOUNTANT"), FAILED_RUN_ID)
+    row = facade().retry_import(
+        actor(PRODUCTION_USER_ID, "PRODUCTION_ACCOUNTANT"), FAILED_RUN_ID
+    )
     assert row.status == "COMPLETED"
 
 
 def test_calculate_cost_business_operation():
-    rows = facade().calculate_cost(actor(), date(2026, 9, 1), [PRODUCT_A, PRODUCT_B], "LABOR_HOURS")
+    rows = facade().calculate_cost(
+        actor(), date(2026, 9, 1), [PRODUCT_A, PRODUCT_B], "LABOR_HOURS"
+    )
     assert len(rows) == 2
     assert all(row.version == 2 for row in rows)
 
@@ -107,7 +120,10 @@ def test_calculate_profitability_creates_completed_job():
 
 def test_export_uses_authenticated_user_not_client_supplied_id():
     row = facade().export_report(actor(USER_ID, "ANALYST"), "PDF")
-    assert row.status == "QUEUED"
+    assert row.status == "READY"
+    from pathlib import Path
+
+    assert Path(row.file_ref).is_file()
     assert row.format == "PDF"
     assert row.requested_by == USER_ID
 

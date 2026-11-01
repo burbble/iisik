@@ -101,7 +101,9 @@ def test_kafka_publisher_retries_bounded_number_of_times():
 
     class Publisher(KafkaEventPublisher):
         def __init__(self):
-            super().__init__(bootstrap_servers="unused:9092", max_attempts=3, backoff_seconds=0)
+            super().__init__(
+                bootstrap_servers="unused:9092", max_attempts=3, backoff_seconds=0
+            )
             self.attempts = 0
 
         def _send_once(self, event):
@@ -146,7 +148,9 @@ def test_kafka_consumer_moves_poison_message_to_dead_letter_after_retries():
         max_attempts=2,
         backoff_seconds=0,
     )
-    consumer._send_to_dead_letter = lambda failed_event, error: dead_letters.append((failed_event, error))
-    assert consumer._process(event) is False
+    consumer._send_to_dead_letter = lambda failed_event, error: (
+        dead_letters.append((failed_event, error)) or True
+    )
+    assert consumer._process(event) is True
     assert len(dead_letters) == 1
     assert dead_letters[0][0].eventId == event.eventId

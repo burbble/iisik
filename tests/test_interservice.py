@@ -45,7 +45,10 @@ def test_costing_command_uses_network_and_publishes_event(grpc_runtime):
     )
     assert len(rows) == 2
     events = grpc_runtime["costing"].events
-    assert [e.eventType for e in events[-2:]] == ["CostCalculationCompleted", "CostCalculationCompleted"]
+    assert [e.eventType for e in events[-2:]] == [
+        "CostCalculationCompleted",
+        "CostCalculationCompleted",
+    ]
     approved = CostingDomainClient().get_approved_cost(PRODUCT_A, date(2026, 9, 1))
     assert approved.version == 2
 
@@ -53,7 +56,9 @@ def test_costing_command_uses_network_and_publishes_event(grpc_runtime):
 def test_analytics_command_uses_costing_and_financial_grpc(grpc_runtime):
     clients = create_grpc_clients()
     clients.costing.calculate_costs_remote(date(2026, 9, 1), [PRODUCT_A], "VOLUME")
-    job = clients.analytics.calculate_profitability_remote(date(2026, 9, 1), [PRODUCT_A])
+    job = clients.analytics.calculate_profitability_remote(
+        date(2026, 9, 1), [PRODUCT_A]
+    )
     assert job.status == "COMPLETED"
     detail = ProfitabilityDomainClient().get_detail(PRODUCT_A, date(2026, 9, 1))
     assert detail.revenue == Decimal("6400.00")

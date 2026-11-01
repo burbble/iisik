@@ -4,7 +4,15 @@ from decimal import Decimal
 import pytest
 
 from app.bootstrap import get_container
-from app.scripts.seed import FAILED_RUN_ID, PRODUCT_A, PRODUCT_B, REPORT_ID, USER_ID, clear_and_seed
+from app.scripts.seed import (
+    COST_CENTER_ID,
+    FAILED_RUN_ID,
+    PRODUCT_A,
+    PRODUCT_B,
+    REPORT_ID,
+    USER_ID,
+    clear_and_seed,
+)
 from app.services.costing.service import ProductCostInput
 from app.shared.errors import ConflictError, ValidationError
 
@@ -16,7 +24,9 @@ def setup_function():
 
 def test_product_filter_and_sort():
     services = get_container()
-    rows = services.master_data.list_products(active=True, sort_by="NAME", sort_direction="DESC")
+    rows = services.master_data.list_products(
+        active=True, sort_by="NAME", sort_direction="DESC"
+    )
     assert len(rows) == 2
     assert rows[0].name >= rows[1].name
 
@@ -24,7 +34,8 @@ def test_product_filter_and_sort():
 def test_retry_failed_import_changes_state():
     services = get_container()
     row = services.production.retry_import(FAILED_RUN_ID)
-    assert row.status == "RUNNING"
+    assert row.status == "COMPLETED"
+    assert row.records_loaded > 0
     assert row.records_failed == 0
     assert row.errors == []
 
@@ -38,7 +49,9 @@ def test_retry_completed_import_is_rejected():
 
 def test_resolve_mapping_updates_master_data():
     services = get_container()
-    row = services.master_data.resolve_external_mapping("MES", "PRODUCT", "MES-DET-01", PRODUCT_B)
+    row = services.master_data.resolve_external_mapping(
+        "MES", "PRODUCT", "MES-DET-01", PRODUCT_B
+    )
     assert row.status == "RESOLVED"
     assert row.internal_id == PRODUCT_B
 
@@ -50,11 +63,30 @@ def test_cost_calculation_allocates_overhead():
     rows = services.costing.calculate_costs(
         period=date(2026, 9, 1),
         items=[
-            ProductCostInput(PRODUCT_A, a.produced_qty, a.material_cost, a.labor_cost, a.labor_hours),
-            ProductCostInput(PRODUCT_B, b.produced_qty, b.material_cost, b.labor_cost, b.labor_hours),
+            ProductCostInput(
+                PRODUCT_A,
+                a.produced_qty,
+                a.material_cost,
+                a.labor_cost,
+                a.labor_hours,
+                allocation_lines=services.production.repository.allocation_data(
+                    PRODUCT_A, date(2026, 9, 1)
+                ),
+            ),
+            ProductCostInput(
+                PRODUCT_B,
+                b.produced_qty,
+                b.material_cost,
+                b.labor_cost,
+                b.labor_hours,
+                allocation_lines=services.production.repository.allocation_data(
+                    PRODUCT_B, date(2026, 9, 1)
+                ),
+            ),
         ],
         overhead_amount=Decimal("1400.00"),
         allocation_base="LABOR_HOURS",
+        overhead_by_center={COST_CENTER_ID: Decimal("1400")},
     )
     assert len(rows) == 2
     assert sum((r.overhead_cost for r in rows), Decimal("0")) == Decimal("1400.00")
@@ -64,7 +96,9 @@ def test_cost_calculation_allocates_overhead():
 def test_invalid_allocation_base_is_rejected():
     services = get_container()
     with pytest.raises(ValidationError):
-        services.costing.calculate_costs(date(2026, 9, 1), [], Decimal("100"), "UNKNOWN")
+        services.costing.calculate_costs(
+            date(2026, 9, 1), [], Decimal("100"), "UNKNOWN"
+        )
 
 
 def test_profitability_aggregation():
@@ -80,8 +114,11 @@ def test_profitability_aggregation():
     assert summary.average_margin_percent == Decimal("51.25")
 
 
-def test_export_business_operation_creates_queued_job():
+def test_export_business_operation_creates_file():
     services = get_container()
     row = services.reporting.create_export("CSV", USER_ID, REPORT_ID)
-    assert row.status == "QUEUED"
+    assert row.status == "READY"
+    from pathlib import Path
+
+    assert Path(row.file_ref).is_file()
     assert row.format == "CSV"
